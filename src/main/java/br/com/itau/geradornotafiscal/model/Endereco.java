@@ -1,6 +1,7 @@
 package br.com.itau.geradornotafiscal.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -29,8 +30,10 @@ public class Endereco {
     private String complemento;
 
     @JsonProperty("finalidade")
+    @NotNull(message = "finalidade do endereco e obrigatoria")
     private Finalidade finalidade;
 
     @JsonProperty("regiao")
+    @NotNull(message = "regiao do endereco e obrigatoria")
     private Regiao regiao;
 }
