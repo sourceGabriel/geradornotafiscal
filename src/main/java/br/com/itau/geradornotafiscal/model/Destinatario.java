@@ -15,6 +15,7 @@ import lombok.*;
 @NoArgsConstructor
 public class Destinatario {
 	@JsonProperty("nome")
+	@NotEmpty
 	private String nome;
 
 	@JsonProperty("tipo_pessoa")

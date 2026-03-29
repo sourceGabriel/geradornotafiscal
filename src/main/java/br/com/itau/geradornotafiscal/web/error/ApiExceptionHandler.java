@@ -1,6 +1,7 @@
 package br.com.itau.geradornotafiscal.web.error;
 
 import br.com.itau.geradornotafiscal.service.exception.BadRequestException;
+import br.com.itau.geradornotafiscal.service.exception.IntegracaoNotaFiscalException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -43,6 +44,18 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    @ExceptionHandler(IntegracaoNotaFiscalException.class)
+    public ResponseEntity<ApiErrorResponse> handleIntegracao(IntegracaoNotaFiscalException ex) {
+        ApiErrorResponse response = new ApiErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.BAD_GATEWAY.value(),
+                HttpStatus.BAD_GATEWAY.getReasonPhrase(),
+                ex.getMessage(),
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(response);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex) {
         ApiErrorResponse response = new ApiErrorResponse(
@@ -55,4 +68,3 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 }
-
