@@ -365,3 +365,8 @@ Workflow: `.github/workflows/ci.yml`
   2. job de deploy em homologacao
   3. gate manual para producao
   4. job automatizado de rollback e notificacao em falha
+
+## Cobertura de Testes
+
+### [Para visualizar a cobertura de testes clique aqui](https://sourcegabriel.github.io/geradornotafiscal/).
+
