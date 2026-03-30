@@ -7,6 +7,9 @@ import java.math.BigDecimal;
 import java.util.List;
 
 @Component
+/**
+ * Resolve a aliquota aplicavel selecionando a primeira estrategia compativel com o destinatario.
+ */
 public class TributacaoAliquotaResolver {
 
     private final List<TributacaoAliquotaStrategy> strategies;
@@ -15,6 +18,9 @@ public class TributacaoAliquotaResolver {
         this.strategies = strategies;
     }
 
+    /**
+     * Resolve a aliquota por estrategia. Caso nenhuma seja compativel, retorna 0.
+     */
     public BigDecimal resolverAliquota(BigDecimal valorTotalItens, Destinatario destinatario) {
         return strategies.stream()
                 .filter(strategy -> strategy.supports(destinatario))

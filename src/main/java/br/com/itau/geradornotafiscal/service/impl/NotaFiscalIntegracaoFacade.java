@@ -10,6 +10,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 
+/**
+ * Faixada para orquestracao das integracoes externas simuladas da nota fiscal.
+ * As integracoes independentes sao executadas em paralelo no pool configurado.
+ */
 @Component
 public class NotaFiscalIntegracaoFacade {
 
@@ -33,6 +37,11 @@ public class NotaFiscalIntegracaoFacade {
         this.notaFiscalExecutorService = notaFiscalExecutorService;
     }
 
+    /**
+     * Executa todas as integracoes de nota fiscal e falha rapidamente caso qualquer uma falhe.
+     *
+     * @throws IntegracaoNotaFiscalException quando ao menos uma integracao externa nao conclui
+     */
     public void executarIntegracoes(NotaFiscal notaFiscal) {
         CompletableFuture<Void> estoqueFuture = executarIntegracao("estoque",
                 () -> estoqueService.enviarNotaFiscalParaBaixaEstoque(notaFiscal));
@@ -55,6 +64,9 @@ public class NotaFiscalIntegracaoFacade {
         }
     }
 
+    /**
+     * Envelopa cada integracao em tarefa assincrona com tratamento uniforme de erro e log.
+     */
     private CompletableFuture<Void> executarIntegracao(String integracao, Runnable task) {
         return CompletableFuture.runAsync(() -> {
             try {

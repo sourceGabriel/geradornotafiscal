@@ -23,6 +23,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Orquestra o fluxo de emissao de nota fiscal:
+ * validacao, calculo de tributos/frete, idempotencia e integracoes externas simuladas.
+ */
 @Service
 public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
 
@@ -47,6 +51,9 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         this.idempotencyKeyGenerator = idempotencyKeyGenerator;
     }
 
+    /**
+     * Executa o fluxo principal com validacao financeira e deduplicacao por idempotencia.
+     */
     @Override
     public NotaFiscal gerarNotaFiscal(Pedido pedido) {
         BigDecimal subtotal = validarPedidoERetornarSubtotal(pedido);
@@ -55,6 +62,9 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         return idempotencyStore.execute(idempotencyKey, () -> gerarNovaNotaFiscal(pedido, subtotal));
     }
 
+    /**
+     * Monta a nota fiscal com base em subtotal validado e regras de negocio aplicadas.
+     */
     private NotaFiscal gerarNovaNotaFiscal(Pedido pedido, BigDecimal subtotal) {
         List<Item> itensPedido = pedido.getItens();
 
@@ -78,6 +88,11 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         return notaFiscal;
     }
 
+    /**
+     * Valida campos obrigatorios de negocio e consistencia monetaria do pedido.
+     *
+     * @return subtotal calculado a partir dos itens, em escala monetaria de 2 casas
+     */
     private BigDecimal validarPedidoERetornarSubtotal(Pedido pedido) {
         if (pedido == null) {
             throw new BadRequestException("Pedido e obrigatorio");
@@ -108,6 +123,9 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         return subtotalCalculado;
     }
 
+    /**
+     * Calcula o subtotal financeiro real com base em valor unitario e quantidade de cada item.
+     */
     private BigDecimal calcularSubtotal(List<Item> itensPedido) {
         return itensPedido.stream()
                 .map(item -> BigDecimal.valueOf(item.getValorUnitario())
@@ -116,6 +134,9 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
                 .setScale(2, RoundingMode.HALF_UP);
     }
 
+    /**
+     * Resolve a regiao de entrega valida para aplicacao do calculo de frete.
+     */
     private Regiao encontrarRegiaoEntrega(Destinatario destinatario) {
         if (destinatario == null || destinatario.getEnderecos() == null) {
             throw new BadRequestException("Destinatario deve conter endereco de entrega com regiao");

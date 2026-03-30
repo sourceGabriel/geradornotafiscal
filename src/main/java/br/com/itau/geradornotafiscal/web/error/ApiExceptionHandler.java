@@ -19,6 +19,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Centraliza o mapeamento de excecoes para respostas HTTP padronizadas da API.
+ */
 @RestControllerAdvice
 public class ApiExceptionHandler {
 

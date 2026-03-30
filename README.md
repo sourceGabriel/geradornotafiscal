@@ -232,6 +232,45 @@ Observacao importante de contrato:
 - latencias simuladas foram preservadas (restricao do desafio)
 - para entrega, o `sleep` adicional para lotes grandes continua ativo no integrador
 
+## System design atual
+
+### Fluxograma funcional (Mermaid)
+
+```mermaid
+flowchart TD
+    A[POST /api/pedido/gerarNotaFiscal] --> B[GeradorNFController]
+    B --> C[GeradorNotaFiscalServiceImpl]
+
+    C --> D[Validacao de contrato e negocio]
+    D --> E{valor_total_itens
+    consistente com subtotal?}
+    E -- nao --> E1[400 BadRequestException]
+    E -- sim --> F[Gerar chave idempotente SHA-256]
+
+    F --> G[InMemoryNotaFiscalIdempotencyStore]
+    G --> H{owner da execucao?}
+    H -- nao --> H1[Reaproveita future existente]
+    H -- sim --> I[Calcular subtotal e aliquota]
+
+    I --> J[CalculadoraAliquotaProduto]
+    J --> K[FreteCalculator por regiao]
+    K --> L[Montar NotaFiscal]
+    L --> M[NotaFiscalIntegracaoFacade]
+
+    M --> N[EstoqueService sleep 380ms]
+    M --> O[RegistroService sleep 500ms]
+    M --> P[EntregaService + EntregaIntegrationPort sleep]
+    M --> Q[FinanceiroService sleep 250ms]
+
+    N --> R{Alguma integracao falhou?}
+    O --> R
+    P --> R
+    Q --> R
+
+    R -- sim --> S[502 IntegracaoNotaFiscalException]
+    R -- nao --> T[200 NotaFiscal]
+```
+
 ## Qualidade, testes e cobertura
 
 Estrategia de testes:
@@ -277,7 +316,9 @@ Configuracao atual:
 
 Workflow versionado: `.github/workflows/ci.yml`
 
-- trigger: `push` e `pull_request` na branch `develop` e `main`
+- trigger:
+  - `push` nas branches `develop` e `main`
+  - `pull_request` para branch `main`
 - pipeline: checkout -> Java 21 -> cache Maven -> `./mvnw -B clean verify`
 - falha se testes ou gate de cobertura (80%) falharem
 

@@ -12,6 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
+/**
+ * Gera chave idempotente deterministica a partir do payload canonico do pedido.
+ */
 @Component
 public class PedidoIdempotencyKeyGenerator {
 
@@ -24,6 +27,9 @@ public class PedidoIdempotencyKeyGenerator {
                 .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true);
     }
 
+    /**
+     * Serializa o pedido de forma canonica e aplica SHA-256 para formar a chave.
+     */
     public String generate(Pedido pedido) {
         try {
             String canonicalPayload = canonicalMapper.writeValueAsString(pedido);

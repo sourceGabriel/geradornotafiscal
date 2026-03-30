@@ -8,6 +8,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 @Component
+/**
+ * Calculadora de frete por regiao, com multiplicadores fixos do dominio.
+ */
 public class FreteCalculator {
 
     private static final BigDecimal MULTIPLICADOR_NORTE = new BigDecimal("1.08");
@@ -16,6 +19,13 @@ public class FreteCalculator {
     private static final BigDecimal MULTIPLICADOR_SUDESTE = new BigDecimal("1.048");
     private static final BigDecimal MULTIPLICADOR_SUL = new BigDecimal("1.06");
 
+    /**
+     * Calcula frete ajustado por regiao com arredondamento monetario em 2 casas.
+     *
+     * @param valorFrete frete base informado no pedido
+     * @param regiao regiao da entrega
+     * @return valor de frete ajustado
+     */
     public BigDecimal calcular(BigDecimal valorFrete, Regiao regiao) {
         if (valorFrete == null) {
             throw new BadRequestException("valor_frete e obrigatorio");

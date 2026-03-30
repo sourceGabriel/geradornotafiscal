@@ -2,8 +2,14 @@ package br.com.itau.geradornotafiscal.service.tax;
 
 import java.math.BigDecimal;
 
+/**
+ * Classe base para estrategias de aliquota baseadas em faixas de subtotal.
+ */
 public abstract class AbstractFaixaAliquotaStrategy implements TributacaoAliquotaStrategy {
 
+    /**
+     * Seleciona a aliquota de acordo com os limites informados.
+     */
     protected BigDecimal porFaixa(BigDecimal valorTotalItens,
                                   int limite1,
                                   int limite2,

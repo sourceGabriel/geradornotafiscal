@@ -15,6 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 @Component
+/**
+ * Implementacao in-memory de idempotencia com estados IN_PROGRESS/COMPLETED/FAILED e TTL.
+ */
 public class InMemoryNotaFiscalIdempotencyStore implements NotaFiscalIdempotencyStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(InMemoryNotaFiscalIdempotencyStore.class);
@@ -39,6 +42,9 @@ public class InMemoryNotaFiscalIdempotencyStore implements NotaFiscalIdempotency
     }
 
     @Override
+    /**
+     * Executa operacao com deduplicacao concorrente por chave idempotente.
+     */
     public NotaFiscal execute(String key, Supplier<NotaFiscal> operation) {
         long now = clock.millis();
         Entry candidate = Entry.inProgress();
@@ -70,6 +76,9 @@ public class InMemoryNotaFiscalIdempotencyStore implements NotaFiscalIdempotency
     }
 
     @Scheduled(fixedDelayString = "${idempotencia.nota-fiscal.cleanup-interval-millis:30000}")
+    /**
+     * Remove entradas expiradas para evitar crescimento indefinido da estrutura em memoria.
+     */
     public void cleanupExpiredEntries() {
         long now = clock.millis();
         entries.entrySet().removeIf(entry -> entry.getValue().isExpired(now));

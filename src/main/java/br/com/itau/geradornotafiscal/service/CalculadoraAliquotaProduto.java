@@ -10,8 +10,18 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Component
+/**
+ * Calcula valor de tributo por item de nota fiscal a partir da aliquota resolvida para o pedido.
+ */
 public class CalculadoraAliquotaProduto {
 
+    /**
+     * Aplica a aliquota sobre o total de cada item (valor_unitario * quantidade).
+     *
+     * @param items itens do pedido
+     * @param aliquotaPercentual aliquota decimal (ex.: 0.15)
+     * @return itens da nota fiscal com tributo calculado e arredondado em 2 casas
+     */
     public List<ItemNotaFiscal> calcularAliquota(List<Item> items, BigDecimal aliquotaPercentual) {
         List<ItemNotaFiscal> itemNotaFiscalList = new ArrayList<>();
 
