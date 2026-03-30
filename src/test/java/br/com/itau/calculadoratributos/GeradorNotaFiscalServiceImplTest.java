@@ -214,6 +214,96 @@ class GeradorNotaFiscalServiceImplTest {
         verify(notaFiscalIntegracaoFacade, times(1)).executarIntegracoes(any());
     }
 
+    @Test
+    void shouldThrowBadRequestWhenPedidoIsNull() {
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(null)
+        );
+
+        assertTrue(exception.getMessage().contains("Pedido e obrigatorio"));
+        verify(notaFiscalIntegracaoFacade, never()).executarIntegracoes(any());
+    }
+
+    @Test
+    void shouldThrowBadRequestWhenDestinatarioIsNull() {
+        Pedido pedido = new Pedido();
+        pedido.setItens(List.of(criarItem("1", 100.0, 1)));
+        pedido.setValorTotalItens(100.0);
+        pedido.setValorFrete(10.0);
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido)
+        );
+
+        assertTrue(exception.getMessage().contains("Destinatario e obrigatorio"));
+        verify(notaFiscalIntegracaoFacade, never()).executarIntegracoes(any());
+    }
+
+    @Test
+    void shouldThrowBadRequestWhenItensAreMissing() {
+        Destinatario destinatario = new Destinatario();
+        destinatario.setTipoPessoa(TipoPessoa.FISICA);
+        destinatario.setEnderecos(List.of(criarEnderecoEntrega()));
+
+        Pedido pedido = new Pedido();
+        pedido.setDestinatario(destinatario);
+        pedido.setValorTotalItens(0.0);
+        pedido.setValorFrete(10.0);
+        pedido.setItens(List.of());
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido)
+        );
+
+        assertTrue(exception.getMessage().contains("Pedido deve conter ao menos um item"));
+        verify(notaFiscalIntegracaoFacade, never()).executarIntegracoes(any());
+    }
+
+    @Test
+    void shouldThrowBadRequestWhenTipoPessoaIsMissing() {
+        Destinatario destinatario = new Destinatario();
+        destinatario.setTipoPessoa(null);
+        destinatario.setEnderecos(List.of(criarEnderecoEntrega()));
+
+        Pedido pedido = new Pedido();
+        pedido.setItens(List.of(criarItem("1", 100.0, 1)));
+        pedido.setValorFrete(10.0);
+        pedido.setValorTotalItens(100.0);
+        pedido.setDestinatario(destinatario);
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido)
+        );
+
+        assertTrue(exception.getMessage().contains("tipo_pessoa e obrigatorio"));
+        verify(notaFiscalIntegracaoFacade, never()).executarIntegracoes(any());
+    }
+
+    @Test
+    void shouldThrowBadRequestWhenDeliveryAddressesAreMissing() {
+        Destinatario destinatario = new Destinatario();
+        destinatario.setTipoPessoa(TipoPessoa.FISICA);
+        destinatario.setEnderecos(null);
+
+        Pedido pedido = new Pedido();
+        pedido.setDestinatario(destinatario);
+        pedido.setValorFrete(10.0);
+        pedido.setValorTotalItens(100.0);
+        pedido.setItens(List.of(criarItem("1", 100.0, 1)));
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido)
+        );
+
+        assertTrue(exception.getMessage().contains("Destinatario deve conter endereco de entrega com regiao"));
+        verify(notaFiscalIntegracaoFacade, never()).executarIntegracoes(any());
+    }
+
     private Pedido criarPedido(TipoPessoa tipoPessoa, RegimeTributacaoPJ regime, List<Item> itens, double frete) {
         Destinatario destinatario = new Destinatario();
         destinatario.setTipoPessoa(tipoPessoa);
