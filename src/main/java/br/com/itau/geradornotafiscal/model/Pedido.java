@@ -16,6 +16,9 @@ import lombok.*;
 @Getter
 @Setter
 @NoArgsConstructor
+/**
+ * Representa o payload de entrada do pedido para emissao de nota fiscal.
+ */
 public class Pedido {
 	 @JsonProperty("id_pedido")
 	    @NotNull(message = "id_pedido e obrigatorio")

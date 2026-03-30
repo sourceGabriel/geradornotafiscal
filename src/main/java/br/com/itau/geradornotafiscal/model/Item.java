@@ -12,6 +12,9 @@ import lombok.Setter;
 @AllArgsConstructor
 @Setter
 @Getter
+/**
+ * Item do pedido recebido no payload de entrada.
+ */
 public class Item {
      @JsonProperty("id_item")
      @NotBlank(message = "id_item e obrigatorio")

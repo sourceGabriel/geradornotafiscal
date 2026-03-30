@@ -5,6 +5,9 @@ import br.com.itau.geradornotafiscal.port.out.EntregaIntegrationPort;
 import org.springframework.stereotype.Service;
 
 @Service
+/**
+ * Servico de dominio para orquestrar o agendamento de entrega da nota fiscal.
+ */
 public class EntregaService {
 
     private final EntregaIntegrationPort entregaIntegrationPort;
@@ -13,6 +16,11 @@ public class EntregaService {
         this.entregaIntegrationPort = entregaIntegrationPort;
     }
 
+    /**
+     * Executa o fluxo de entrega mantendo latencia simulada do cenario.
+     *
+     * @param notaFiscal nota fiscal a ser enviada para agendamento
+     */
     public void agendarEntrega(NotaFiscal notaFiscal) {
         try {
             // Simula o agendamento da entrega.

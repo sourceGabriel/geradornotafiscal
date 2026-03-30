@@ -13,6 +13,9 @@ import lombok.*;
 @Setter
 @AllArgsConstructor
 @NoArgsConstructor
+/**
+ * Dados do destinatario da nota fiscal, incluindo documentos e enderecos.
+ */
 public class Destinatario {
 	@JsonProperty("nome")
 	@NotEmpty

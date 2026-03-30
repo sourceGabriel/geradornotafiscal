@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/pedido")
 /**
  * Adapter HTTP para recebimento de pedidos e emissao de nota fiscal.
+ * Mantem o contrato de entrada/saida exposto para sistemas consumidores.
  */
 public class GeradorNFController {
 
@@ -29,6 +30,12 @@ public class GeradorNFController {
     private final GeradorNotaFiscalService notaFiscalService;
     private final MeterRegistry meterRegistry;
 
+    /**
+     * Injeta dependencias de caso de uso e telemetria HTTP.
+     *
+     * @param notaFiscalService servico de orquestracao da nota fiscal
+     * @param meterRegistry registro de metricas de tempo de endpoint
+     */
     public GeradorNFController(GeradorNotaFiscalService notaFiscalService, MeterRegistry meterRegistry) {
         this.notaFiscalService = notaFiscalService;
         this.meterRegistry = meterRegistry;

@@ -13,6 +13,9 @@ import lombok.Setter;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
+/**
+ * Endereco do destinatario usado para regras de entrega e frete.
+ */
 public class Endereco {
     @JsonProperty("cep")
     private String cep;

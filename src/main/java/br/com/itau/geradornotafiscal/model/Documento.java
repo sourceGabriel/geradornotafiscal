@@ -10,6 +10,9 @@ import lombok.Setter;
 @NoArgsConstructor
 @Getter
 @Setter
+/**
+ * Documento de identificacao do destinatario (ex.: CPF/CNPJ).
+ */
 public class Documento {
 
     @JsonProperty("numero")

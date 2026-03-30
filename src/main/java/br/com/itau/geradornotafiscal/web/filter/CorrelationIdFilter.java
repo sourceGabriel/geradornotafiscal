@@ -18,11 +18,16 @@ import java.util.UUID;
 @Component
 public class CorrelationIdFilter extends OncePerRequestFilter {
 
+    /** Header de entrada/saida para correlacao distribuida. */
     public static final String CORRELATION_HEADER = "Xitau-Correlation-Id";
+    /** Chave MDC usada no layout estruturado de log. */
     public static final String CORRELATION_MDC_KEY = "correlation_id";
     private static final int MAX_CORRELATION_ID_LENGTH = 128;
 
     @Override
+    /**
+     * Propaga (ou gera) correlation-id por requisicao e limpa o MDC ao final.
+     */
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {

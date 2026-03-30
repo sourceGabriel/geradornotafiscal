@@ -11,6 +11,9 @@ import lombok.*;
 @Getter
 @Setter
 @NoArgsConstructor
+/**
+ * Representa a resposta de nota fiscal processada pela aplicacao.
+ */
 public class NotaFiscal {
     @JsonProperty("id_nota_fiscal")
     private String idNotaFiscal;

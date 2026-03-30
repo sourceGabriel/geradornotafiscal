@@ -16,13 +16,17 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doAnswer;
 
 class IntegracaoComponentTest {
 
@@ -140,6 +144,60 @@ class IntegracaoComponentTest {
         );
 
         assertTrue(ex.getMessage().contains("entrega"));
+    }
+
+    @Test
+    void shouldRetryAndSucceedWhenIntegrationFailsOnce() {
+        var estoque = mock(EstoqueService.class);
+        var registro = mock(RegistroService.class);
+        var entrega = mock(EntregaService.class);
+        var financeiro = mock(FinanceiroService.class);
+
+        AtomicInteger tentativasEntrega = new AtomicInteger(0);
+        doAnswer(invocation -> {
+            if (tentativasEntrega.incrementAndGet() == 1) {
+                throw new RuntimeException("falha transitoria");
+            }
+            return null;
+        }).when(entrega).agendarEntrega(org.mockito.ArgumentMatchers.any());
+
+        NotaFiscalIntegracaoFacade facade = new NotaFiscalIntegracaoFacade(
+                estoque,
+                registro,
+                entrega,
+                financeiro,
+                executorService,
+                objectMapper
+        );
+
+        assertDoesNotThrow(() -> facade.executarIntegracoes(notaFiscalComUmItem()));
+        assertEquals(2, tentativasEntrega.get());
+    }
+
+    @Test
+    void shouldExhaustRetriesAndFailWhenIntegrationKeepsFailing() {
+        var estoque = mock(EstoqueService.class);
+        var registro = mock(RegistroService.class);
+        var entrega = mock(EntregaService.class);
+        var financeiro = mock(FinanceiroService.class);
+
+        AtomicInteger tentativasEntrega = new AtomicInteger(0);
+        doAnswer(invocation -> {
+            tentativasEntrega.incrementAndGet();
+            throw new RuntimeException("falha persistente");
+        }).when(entrega).agendarEntrega(org.mockito.ArgumentMatchers.any());
+
+        NotaFiscalIntegracaoFacade facade = new NotaFiscalIntegracaoFacade(
+                estoque,
+                registro,
+                entrega,
+                financeiro,
+                executorService,
+                objectMapper
+        );
+
+        assertThrows(IntegracaoNotaFiscalException.class, () -> facade.executarIntegracoes(notaFiscalComUmItem()));
+        assertEquals(3, tentativasEntrega.get());
     }
 
     private NotaFiscal notaFiscalComUmItem() {

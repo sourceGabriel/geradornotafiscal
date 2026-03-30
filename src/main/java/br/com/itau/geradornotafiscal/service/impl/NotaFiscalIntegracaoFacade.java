@@ -5,11 +5,13 @@ import br.com.itau.geradornotafiscal.service.exception.IntegracaoNotaFiscalExcep
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import org.apache.tomcat.util.digester.ObjectCreateRule;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.retry.backoff.ExponentialRandomBackOffPolicy;
+import org.springframework.retry.policy.SimpleRetryPolicy;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -36,6 +38,7 @@ public class NotaFiscalIntegracaoFacade {
     private final ExecutorService notaFiscalExecutorService;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
+    private final RetryTemplate integracaoRetryTemplate;
     private final Map<String, AtomicInteger> falhasConsecutivas = Map.of(
             "estoque", new AtomicInteger(0),
             "registro", new AtomicInteger(0),
@@ -43,21 +46,38 @@ public class NotaFiscalIntegracaoFacade {
             "financeiro", new AtomicInteger(0)
     );
 
+    /**
+     * Construtor de conveniencia para cenarios sem injecao completa de metricas/retry.
+     */
     public NotaFiscalIntegracaoFacade(EstoqueService estoqueService,
                                       RegistroService registroService,
                                       EntregaService entregaService,
                                       FinanceiroService financeiroService,
                                       ExecutorService notaFiscalExecutorService, ObjectMapper objectMapper) {
-        this(estoqueService, registroService, entregaService, financeiroService, notaFiscalExecutorService, new SimpleMeterRegistry(), objectMapper);
+        this(
+                estoqueService,
+                registroService,
+                entregaService,
+                financeiroService,
+                notaFiscalExecutorService,
+                new SimpleMeterRegistry(),
+                objectMapper,
+                defaultRetryTemplate()
+        );
     }
 
+    /**
+     * Construtor principal com metricas e politica de retry injetaveis.
+     */
     @Autowired
     public NotaFiscalIntegracaoFacade(EstoqueService estoqueService,
                                       RegistroService registroService,
                                       EntregaService entregaService,
                                       FinanceiroService financeiroService,
                                       ExecutorService notaFiscalExecutorService,
-                                      MeterRegistry meterRegistry, ObjectMapper objectMapper) {
+                                      MeterRegistry meterRegistry,
+                                      ObjectMapper objectMapper,
+                                      RetryTemplate integracaoRetryTemplate) {
         this.estoqueService = estoqueService;
         this.registroService = registroService;
         this.entregaService = entregaService;
@@ -65,6 +85,7 @@ public class NotaFiscalIntegracaoFacade {
         this.notaFiscalExecutorService = notaFiscalExecutorService;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
+        this.integracaoRetryTemplate = integracaoRetryTemplate;
         registrarGaugesFalhasConsecutivas();
     }
 
@@ -122,9 +143,30 @@ public class NotaFiscalIntegracaoFacade {
                 MDC.setContextMap(contextoMdc);
             }
             long inicioNanos = System.nanoTime();
+            AtomicInteger ultimaTentativa = new AtomicInteger(1);
             try {
                 LOGGER.info("event= integracao_inicio integracao= {} started_at= {}", integracao, Instant.now());
-                task.run();
+                integracaoRetryTemplate.execute(context -> {
+                    int attempt = context.getRetryCount() + 1;
+                    ultimaTentativa.set(attempt);
+                    if (attempt > 1) {
+                        meterRegistry.counter("nota_fiscal.integracao.retry.attempts", "integracao", integracao).increment();
+                        LOGGER.warn("event= integracao_retry integracao= {} attempt= {}", integracao, attempt);
+                    }
+
+                    task.run();
+                    return null;
+                }, context -> {
+                    meterRegistry.counter("nota_fiscal.integracao.retry.exhausted", "integracao", integracao).increment();
+                    Throwable lastThrowable = context.getLastThrowable();
+                    String msg = lastThrowable == null ? "erro_desconhecido" : lastThrowable.getMessage();
+                    throw new IntegracaoNotaFiscalException("Falha ao executar integracoes da nota fiscal: " + integracao + " apos retries", lastThrowable == null ? new RuntimeException(msg) : lastThrowable);
+                });
+
+                if (ultimaTentativa.get() > 1) {
+                    meterRegistry.counter("nota_fiscal.integracao.success_after_retry", "integracao", integracao).increment();
+                }
+
                 falhasConsecutivas.get(integracao).set(0);
                 meterRegistry.counter("nota_fiscal.integracao.success", "integracao", integracao).increment();
                 long duracaoMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - inicioNanos);
@@ -141,6 +183,9 @@ public class NotaFiscalIntegracaoFacade {
                         Instant.now(),
                         duracaoMs,
                         ex.getMessage());
+                if (ex instanceof IntegracaoNotaFiscalException integracaoEx) {
+                    throw integracaoEx;
+                }
                 throw new IntegracaoNotaFiscalException(
                         "Falha ao executar integracoes da nota fiscal: " + integracao,
                         ex
@@ -153,6 +198,9 @@ public class NotaFiscalIntegracaoFacade {
         }, notaFiscalExecutorService);
     }
 
+    /**
+     * Publica gauges com quantidade de falhas consecutivas por integracao.
+     */
     private void registrarGaugesFalhasConsecutivas() {
         falhasConsecutivas.forEach((integracao, contador) ->
                 meterRegistry.gauge("nota_fiscal.integracao.consecutive_failures", java.util.List.of(
@@ -160,6 +208,27 @@ public class NotaFiscalIntegracaoFacade {
                         ), contador, AtomicInteger::get));
     }
 
+    /**
+     * Politica default de retry com maximo de tentativas e backoff exponencial com jitter.
+     */
+    private static RetryTemplate defaultRetryTemplate() {
+        RetryTemplate retryTemplate = new RetryTemplate();
+
+        SimpleRetryPolicy retryPolicy = new SimpleRetryPolicy(3);
+        retryTemplate.setRetryPolicy(retryPolicy);
+
+        ExponentialRandomBackOffPolicy backOffPolicy = new ExponentialRandomBackOffPolicy();
+        backOffPolicy.setInitialInterval(200);
+        backOffPolicy.setMultiplier(2.0);
+        backOffPolicy.setMaxInterval(1200);
+        retryTemplate.setBackOffPolicy(backOffPolicy);
+
+        return retryTemplate;
+    }
+
+    /**
+     * Serializa objetos para log estruturado, com fallback seguro em caso de erro.
+     */
     private String toJson(Object obj){
         try {
             return objectMapper.writeValueAsString(obj);

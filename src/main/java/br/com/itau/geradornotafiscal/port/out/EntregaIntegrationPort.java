@@ -10,6 +10,10 @@ import java.time.Instant;
 import java.util.concurrent.TimeUnit;
 
 @Component
+/**
+ * Adaptador de saida para simulacao de agendamento em provedor de entrega.
+ * Preserva latencia artificial do desafio para representar dependencia externa.
+ */
 public class EntregaIntegrationPort {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EntregaIntegrationPort.class);
@@ -19,6 +23,11 @@ public class EntregaIntegrationPort {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Simula chamada externa de agendamento com logs de entrada/saida e tempo de execucao.
+     *
+     * @param notaFiscal nota fiscal enviada para o provedor externo
+     */
     public void criarAgendamentoEntrega(NotaFiscal notaFiscal) {
         Instant inicio = Instant.now();
         long inicioNanos = System.nanoTime();
@@ -52,6 +61,9 @@ public class EntregaIntegrationPort {
         }
     }
 
+    /**
+     * Serializa objeto para apoio a logs estruturados.
+     */
     private String toJson(Object obj){
         try {
             return objectMapper.writeValueAsString(obj);

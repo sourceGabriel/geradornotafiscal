@@ -46,6 +46,9 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
     private final PedidoIdempotencyKeyGenerator idempotencyKeyGenerator;
     private final MeterRegistry meterRegistry;
 
+    /**
+     * Construtor com todas as dependencias necessarias para orquestrar o fluxo.
+     */
     public GeradorNotaFiscalServiceImpl(CalculadoraAliquotaProduto calculadoraAliquotaProduto,
                                         TributacaoAliquotaResolver tributacaoAliquotaResolver,
                                         FreteCalculator freteCalculator,
@@ -187,6 +190,9 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
                 .orElseThrow(() -> new BadRequestException("Endereco de entrega com regiao e obrigatorio"));
     }
 
+    /**
+     * Registra duracao de etapa em metrica de timer para observabilidade tecnica.
+     */
     private void registrarTempoEtapa(String etapa, long inicioNanos) {
         meterRegistry.timer("nota_fiscal.stage.duration", "etapa", etapa)
                 .record(System.nanoTime() - inicioNanos, TimeUnit.NANOSECONDS);

@@ -1,0 +1,17 @@
+flowchart LR
+    C[Cliente] --> G[API Gateway ou ALB]
+    G --> A[Servico Nota Fiscal - Spring Boot]
+    A --> AUTH[AuthN/AuthZ - Cognito ou IdP corporativo]
+
+    A --> EST[Estoque Service Simulado]
+    A --> REG[Registro Service Simulado]
+    A --> ENT[Entrega Integration Simulada]
+    A --> FIN[Financeiro Service Simulado]
+
+    A --> RDS[(RDS PostgreSQL)]
+    A --> MQ[(SQS/SNS)]
+
+    A --> LOG[CloudWatch Logs]
+    A --> MET[CloudWatch Metrics / Prometheus]
+    A --> TRC[X-Ray / OpenTelemetry]
+

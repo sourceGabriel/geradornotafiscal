@@ -33,6 +33,9 @@ public class ApiExceptionHandler {
         this.meterRegistry = meterRegistry;
     }
 
+    /**
+     * Trata erros de regra de negocio retornando HTTP 400.
+     */
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ApiErrorResponse> handleBadRequest(BadRequestException ex) {
         registrarErroHttp("400");
@@ -47,6 +50,9 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    /**
+     * Trata violacoes de Bean Validation retornando os campos invalidos.
+     */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
         registrarErroHttp("400");
@@ -68,6 +74,9 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    /**
+     * Trata erros de parsing/desserializacao do JSON de entrada.
+     */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
         registrarErroHttp("400");
@@ -85,6 +94,9 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(response);
     }
 
+    /**
+     * Trata falhas de integracoes externas com retorno HTTP 502.
+     */
     @ExceptionHandler(IntegracaoNotaFiscalException.class)
     public ResponseEntity<ApiErrorResponse> handleIntegracao(IntegracaoNotaFiscalException ex) {
         registrarErroHttp("502");
@@ -99,6 +111,9 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(response);
     }
 
+    /**
+     * Fallback para excecoes nao mapeadas, retornando HTTP 500.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex) {
         registrarErroHttp("500");
@@ -113,6 +128,9 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
     }
 
+    /**
+     * Extrai mensagens amigaveis para erros de desserializacao comuns.
+     */
     private List<String> extractDeserializationDetails(HttpMessageNotReadableException ex) {
         Throwable cause = findCause(ex, UnrecognizedPropertyException.class, InvalidFormatException.class, MismatchedInputException.class);
 
@@ -139,6 +157,9 @@ public class ApiExceptionHandler {
         return List.of("Nao foi possivel interpretar o JSON enviado. Verifique tipos e formato dos campos.");
     }
 
+    /**
+     * Procura recursivamente por causas de tipos especificos na cadeia de excecao.
+     */
     @SafeVarargs
     private Throwable findCause(Throwable throwable, Class<? extends Throwable>... candidateTypes) {
         Throwable current = throwable;
@@ -153,6 +174,9 @@ public class ApiExceptionHandler {
         return null;
     }
 
+    /**
+     * Converte caminho Jackson em notacao textual para retorno de erro.
+     */
     private String jsonPath(List<com.fasterxml.jackson.databind.JsonMappingException.Reference> references) {
         if (references == null || references.isEmpty()) {
             return "payload";
@@ -163,6 +187,9 @@ public class ApiExceptionHandler {
                 .collect(Collectors.joining("."));
     }
 
+    /**
+     * Gera descricao legivel do tipo esperado para mensagens de validacao.
+     */
     private String describeType(Class<?> targetType) {
         if (targetType == null) {
             return "tipo valido";
@@ -177,6 +204,9 @@ public class ApiExceptionHandler {
         return targetType.getSimpleName();
     }
 
+    /**
+     * Incrementa metrica de erro HTTP por status.
+     */
     private void registrarErroHttp(String status) {
         meterRegistry.counter("nota_fiscal.http.errors", "status", status).increment();
     }
