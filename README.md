@@ -1,12 +1,12 @@
 # Gerador de Nota Fiscal
 
-Aplicacao Spring Boot para processamento de pedidos e emissao de notas fiscais com foco em:
+Aplicacao Spring Boot para processamento de pedidos e emissao de nota fiscal com foco em:
 
 - corretude de calculo (subtotal, tributo por item, frete)
 - isolamento por requisicao (sem estado compartilhado)
 - idempotencia por payload
-- resiliencia no tratamento de erros de entrada e integracao
-- observabilidade e qualidade de entrega (CI + cobertura)
+- resiliencia em integracoes externas simuladas
+- observabilidade e qualidade de entrega
 
 ## Estado atual da entrega do desafio
 
@@ -16,104 +16,69 @@ Aplicacao Spring Boot para processamento de pedidos e emissao de notas fiscais c
 - testes de regressao e validacao de contrato ampliados
 - pipeline CI com `clean verify`
 - gate de cobertura JaCoCo em 80%
+- ultima cobertura de linhas registrada no relatorio local: **90.36%** (`target/site/jacoco/jacoco.xml`)
 
-## Tecnologias
+## Checklist de aderencia ao desafio
+
+- [x] Nao alterar contrato de entrada (payload mantido com `@JsonProperty`)
+- [x] Preservar latencia simulada (`sleep`) das integracoes
+- [x] Corrigir acumulacao de estado entre execucoes consecutivas
+- [x] Validar consistencia financeira (`valor_total_itens` x subtotal calculado)
+- [x] Migrar para Java 21 e Spring Boot 3.3.6
+- [x] Cobertura bloqueante no build com JaCoCo >= 80%
+- [x] Observabilidade com logs estruturados, MDC e endpoints Actuator
+- [x] CI em GitHub Actions com `push` + `pull_request` + `workflow_dispatch`
+- [x] Diagramas de arquitetura (fluxo interno + referencia AWS)
+
+## Stack tecnica
 
 - Java 21
 - Spring Boot 3.3.6
 - Spring Web
 - Bean Validation (`jakarta.validation`)
 - Spring Actuator
+- Micrometer + Prometheus registry
+- Spring Retry (`RetryTemplate`)
 - Maven Wrapper
 - JUnit 5 + Mockito
 - JaCoCo
 - GitHub Actions
 
-## Arquitetura e funcionamento
+Artefatos gerados:
 
-### Fluxo principal
-
-`GeradorNFController` -> `GeradorNotaFiscalServiceImpl` -> `NotaFiscalIntegracaoFacade`
-
-Etapas de processamento:
-
-1. valida payload e regras obrigatorias
-2. gera chave de idempotencia do payload (`PedidoIdempotencyKeyGenerator`)
-3. aplica idempotencia em memoria (`InMemoryNotaFiscalIdempotencyStore`)
-4. calcula subtotal real pelos itens e valida consistencia com `valor_total_itens` informado
-5. resolve aliquota por tipo de pessoa/regime (`TributacaoAliquotaResolver` + `Strategy`)
-6. calcula tributo por item (`CalculadoraAliquotaProduto`)
-7. calcula frete ajustado por regiao (`FreteCalculator`)
-8. monta `NotaFiscal`
-9. executa integracoes simuladas em paralelo (`NotaFiscalIntegracaoFacade`)
-
-### Separacao de responsabilidades
-
-- `web/controller`: entrada HTTP
-- `web/error`: contrato de erro e mapeamento de excecoes
-- `service/impl`: orquestracao de caso de uso e integracoes
-- `service/tax`: regras de tributacao por estrategia
-- `service/idempotency`: deduplicacao por payload
-- `service`: calculos de frete e tributo por item
-- `port/out`: simulacao de integracao externa de entrega
-
-## Regras de negocio
-
-### Regras de calculo
-
-- subtotal da nota = soma de (`valor_unitario * quantidade`) de cada item
-- tributo do item = (`valor_unitario * quantidade`) * aliquota
-- arredondamento monetario interno: `BigDecimal`, `scale=2`, `RoundingMode.HALF_UP`
-- frete ajustado por regiao:
-  - `NORTE`: x 1.08
-  - `NORDESTE`: x 1.085
-  - `CENTRO_OESTE`: x 1.07
-  - `SUDESTE`: x 1.048
-  - `SUL`: x 1.06
-
-### Regras de aliquota
-
-`Pessoa Fisica` (`tipo_pessoa=FISICA`):
-
-- subtotal < 500 -> 0%
-- 500 <= subtotal <= 2000 -> 12%
-- 2000 < subtotal <= 3500 -> 15%
-- subtotal > 3500 -> 17%
-
-`Pessoa Juridica` (`tipo_pessoa=JURIDICA`) por regime:
-
-- `SIMPLES_NACIONAL`: 3%, 7%, 13%, 19% (faixas 1000/2000/5000)
-- `LUCRO_REAL`: 3%, 9%, 15%, 20% (faixas 1000/2000/5000)
-- `LUCRO_PRESUMIDO`: 3%, 9%, 16%, 20% (faixas 1000/2000/5000)
-- sem estrategia compativel -> 0%
-
-### Regras de endereco de entrega
-
-O destinatario deve possuir endereco de entrega com:
-
-- `finalidade` obrigatoria (`ENTREGA` ou `COBRANCA_ENTREGA` elegivel para frete)
-- `regiao` obrigatoria para calculo de frete
-
-## Contrato da API
+## Contrato HTTP
 
 ### Endpoint
 
 - `POST /api/pedido/gerarNotaFiscal`
 
-### Tipos principais (entrada)
+### Tipos e enums relevantes
 
 - `tipo_pessoa`: `FISICA` | `JURIDICA`
 - `regime_tributacao`: `SIMPLES_NACIONAL` | `LUCRO_REAL` | `LUCRO_PRESUMIDO` | `OUTROS`
 - `tipo` (documento): `CPF` | `CNPJ`
-- `finalidade`: `COBRANCA_ENTREGA` | `ENTREGA` | `COBRANCA` | `OUTROS`
+- `finalidade` (endereco): `COBRANCA_ENTREGA` | `ENTREGA` | `COBRANCA` | `OUTROS`
 - `regiao`: `NORTE` | `NORDESTE` | `CENTRO_OESTE` | `SUDESTE` | `SUL`
 
-### Payloads de referencia (imutaveis)
+### Campos obrigatorios (resumo)
+
+- `id_pedido` > 0
+- `data` no formato ISO (`yyyy-MM-dd`)
+- pelo menos 1 item em `itens`
+- `destinatario.nome` nao vazio
+- `destinatario.tipo_pessoa` obrigatorio
+- pelo menos 1 endereco em `destinatario.enderecos`
+- `destinatario.enderecos[].finalidade` obrigatoria
+- `destinatario.enderecos[].regiao` obrigatoria
+- `valor_unitario` e `quantidade` dos itens devem ser maiores que zero
+- `valor_total_itens` e `valor_frete` nao podem ser negativos
+
+### Payloads de referencia
 
 - `src/main/resources/paylods/teste-pf.json`
 - `src/main/resources/paylods/teste-pj-simples.json`
 
-Exemplo de request (PF):
+### Exemplo de request
 
 ```json
 {
@@ -123,9 +88,9 @@ Exemplo de request (PF):
   "valor_frete": 10.0,
   "itens": [
     {
-      "id_item": 1,
+      "id_item": "1",
       "descricao": "Teclado USB",
-      "valor_unitario": 50,
+      "valor_unitario": 50.0,
       "quantidade": 2
     }
   ],
@@ -142,7 +107,7 @@ Exemplo de request (PF):
       {
         "logradouro": "Av do estado",
         "numero": "5533",
-        "complemento": "4 anndar b",
+        "complemento": "4 andar b",
         "bairro": "Mooca",
         "cidade": "Sao Paulo",
         "estado": "SP",
@@ -156,7 +121,7 @@ Exemplo de request (PF):
 }
 ```
 
-### Response de sucesso (200)
+### Exemplo de response de sucesso (200)
 
 ```json
 {
@@ -173,6 +138,8 @@ Exemplo de request (PF):
       "valor_tributo_item": 12.0
     }
   ],
+  "valor_total_tributos": 12.0,
+  "valor_total_nota": 110.48,
   "destinatario": {
     "nome": "John Doe",
     "tipo_pessoa": "FISICA"
@@ -180,7 +147,7 @@ Exemplo de request (PF):
 }
 ```
 
-### Responses de erro
+### Erros
 
 Formato padrao (`ApiErrorResponse`):
 
@@ -199,169 +166,202 @@ Formato padrao (`ApiErrorResponse`):
 Mapeamentos:
 
 - `400 Bad Request`
-  - validacao bean (`MethodArgumentNotValidException`)
+  - Bean Validation (`MethodArgumentNotValidException`)
   - erro de desserializacao (`HttpMessageNotReadableException`)
   - regra de negocio (`BadRequestException`)
 - `502 Bad Gateway`
-  - falha em integracao externa simulada (`IntegracaoNotaFiscalException`)
+  - falha em integracao externa (`IntegracaoNotaFiscalException`)
 - `500 Internal Server Error`
-  - erro inesperado
+  - erro nao mapeado
 
-Observacao importante de contrato:
+Configuracao de contrato relevante:
 
 - `spring.jackson.deserialization.fail-on-unknown-properties=true`
-- campos extras no JSON sao rejeitados com `400`
+- campos desconhecidos no JSON retornam `400`
 
-## Idempotencia e confiabilidade
+## Regras de negocio
 
-- chave idempotente gerada por hash SHA-256 do payload canonico
-- chamadas iguais concorrentes reaproveitam a mesma execucao
-- status internos:
-  - `IN_PROGRESS`
-  - `COMPLETED`
-  - `FAILED`
-- TTL configuravel em `application.properties`:
-  - `idempotencia.nota-fiscal.ttl-completed-seconds=600`
-  - `idempotencia.nota-fiscal.ttl-failed-seconds=30`
-  - `idempotencia.nota-fiscal.cleanup-interval-millis=30000`
+### Calculos
 
-## Performance e latencia simulada
+- subtotal = soma de (`valor_unitario * quantidade`) dos itens
+- `valor_total_itens` informado deve bater com subtotal calculado
+- aliquota resolvida por perfil do destinatario
+- tributo por item = (`valor_unitario * quantidade`) * aliquota
+- `valor_total_tributos` = soma dos tributos dos itens
+- frete ajustado por regiao
+- `valor_total_nota = subtotal + valor_frete_ajustado`
+- calculo monetario interno com `BigDecimal`, `scale=2`, `RoundingMode.HALF_UP`
 
-- o bug de degradacao progressiva foi corrigido removendo estado compartilhado
-- integracoes agora sao orquestradas em paralelo (`ExecutorService` com pool fixo 4)
-- latencias simuladas foram preservadas (restricao do desafio)
-- para entrega, o `sleep` adicional para lotes grandes continua ativo no integrador
+> Observacao: `valor_total_nota` nao soma `valor_total_tributos` novamente; os tributos ja sao expostos separadamente no contrato.
 
-## System design atual
+### Faixas de aliquota
 
-### Fluxograma funcional (Mermaid)
+Pessoa fisica (`tipo_pessoa=FISICA`):
 
-```mermaid
-flowchart TD
-    A[POST /api/pedido/gerarNotaFiscal] --> B[GeradorNFController]
-    B --> C[GeradorNotaFiscalServiceImpl]
+- subtotal < 500 -> 0%
+- 500 <= subtotal <= 2000 -> 12%
+- 2000 < subtotal <= 3500 -> 15%
+- subtotal > 3500 -> 17%
 
-    C --> D[Validacao de contrato e negocio]
-    D --> E{valor_total_itens
-    consistente com subtotal?}
-    E -- nao --> E1[400 BadRequestException]
-    E -- sim --> F[Gerar chave idempotente SHA-256]
+Pessoa juridica (`tipo_pessoa=JURIDICA`):
 
-    F --> G[InMemoryNotaFiscalIdempotencyStore]
-    G --> H{owner da execucao?}
-    H -- nao --> H1[Reaproveita future existente]
-    H -- sim --> I[Calcular subtotal e aliquota]
+- `SIMPLES_NACIONAL`: 3%, 7%, 13%, 19% (faixas 1000/2000/5000)
+- `LUCRO_REAL`: 3%, 9%, 15%, 20% (faixas 1000/2000/5000)
+- `LUCRO_PRESUMIDO`: 3%, 9%, 16%, 20% (faixas 1000/2000/5000)
+- sem estrategia compativel: 0%
 
-    I --> J[CalculadoraAliquotaProduto]
-    J --> K[FreteCalculator por regiao]
-    K --> L[Montar NotaFiscal]
-    L --> M[NotaFiscalIntegracaoFacade]
+### Multiplicadores de frete
 
-    M --> N[EstoqueService sleep 380ms]
-    M --> O[RegistroService sleep 500ms]
-    M --> P[EntregaService + EntregaIntegrationPort sleep]
-    M --> Q[FinanceiroService sleep 250ms]
+- `NORTE`: x 1.08
+- `NORDESTE`: x 1.085
+- `CENTRO_OESTE`: x 1.07
+- `SUDESTE`: x 1.048
+- `SUL`: x 1.06
 
-    N --> R{Alguma integracao falhou?}
-    O --> R
-    P --> R
-    Q --> R
+## Idempotencia
 
-    R -- sim --> S[502 IntegracaoNotaFiscalException]
-    R -- nao --> T[200 NotaFiscal]
-```
+Implementacao atual: `InMemoryNotaFiscalIdempotencyStore`
 
-## Qualidade, testes e cobertura
+- chave gerada por SHA-256 do payload canonico (`PedidoIdempotencyKeyGenerator`)
+- deduplicacao concorrente para requisicoes iguais
+- estados internos: `IN_PROGRESS`, `COMPLETED`, `FAILED`
+- limpeza periodica de expirados (`@Scheduled`)
 
-Estrategia de testes:
+Configuracoes em `application.properties`:
 
-- unitarios de regra de negocio e aliquota
-- testes de servico para regressao funcional e idempotencia concorrente
-- testes de controller para contrato HTTP/validacao
+- `idempotencia.nota-fiscal.ttl-completed-seconds=600`
+- `idempotencia.nota-fiscal.ttl-failed-seconds=30`
+- `idempotencia.nota-fiscal.cleanup-interval-millis=30000`
 
-Exemplos de cenarios cobertos:
+## Integracoes simuladas e resiliencia
 
-- acumulacao entre execucoes consecutivas
-- rejeicao com `400` quando `valor_total_itens` diverge do subtotal calculado
-- validacao detalhada de tipos, data invalida e campo desconhecido
-- validacao de `destinatario.enderecos[].finalidade` e `destinatario.enderecos[].regiao`
-- resposta `502` em falha de integracao
+Orquestracao paralela na `NotaFiscalIntegracaoFacade` usando pool fixo de 4 threads (`AsyncConfig`).
 
-Cobertura:
+Latencias simuladas atuais:
 
-- JaCoCo com gate minimo de 80% no `verify`
-- cobertura atual medida no projeto: 87.63% de linhas
-- relatorio: `target/site/jacoco/index.html`
+- `EstoqueService`: `sleep(380ms)`
+- `RegistroService`: `sleep(500ms)`
+- `FinanceiroService`: `sleep(250ms)`
+- `EntregaService`: `sleep(150ms)` + `EntregaIntegrationPort`
+- `EntregaIntegrationPort`: `sleep(200ms)`; se `itens > 5`, adiciona `sleep(5000ms)`
+
+Retry de integracoes (backoff exponencial com jitter):
+
+- `integracao.retry.max-attempts=3`
+- `integracao.retry.initial-interval-millis=200`
+- `integracao.retry.multiplier=2.0`
+- `integracao.retry.max-interval-millis=1200`
 
 ## Observabilidade
 
-Configuracao atual:
+### Logging
 
-- logs em nivel `INFO` para aplicacao
-- logs de validacao e erro no `ApiExceptionHandler`
-- Actuator exposto em:
-  - `/actuator/health`
-  - `/actuator/info`
-  - `/actuator/metrics`
-  - `/actuator/prometheus`
+- correlation id por request via header `Xitau-Correlation-Id`
+- se ausente, o filtro gera UUID
+- correlation id propagado para response e MDC
+- logs JSON com campos: `timestamp`, `level`, `service`, `correlation_id`, `id_pedido`, `id_nota_fiscal`, `idempotency_key`, entre outros
 
-## Como executar localmente
+### Metricas relevantes
 
-### Pre-requisitos
+- `nota_fiscal.endpoint.duration`
+- `nota_fiscal.stage.duration` (validacao, calculo, integracoes, total)
+- `nota_fiscal.http.errors` por status (`400`, `502`, `500`)
+- `nota_fiscal.idempotency.reuse`
+- `nota_fiscal.integracao.duration`
+- `nota_fiscal.integracao.success`
+- `nota_fiscal.integracao.failure`
+- `nota_fiscal.integracao.retry.attempts`
+- `nota_fiscal.integracao.success_after_retry`
+- `nota_fiscal.integracao.retry.exhausted`
+- `nota_fiscal.integracao.consecutive_failures`
 
-- Java 21
-- Maven Wrapper (ja incluso)
+Actuator exposto:
 
-## CI/CD
+- `/actuator/health`
+- `/actuator/info`
+- `/actuator/metrics`
+- `/actuator/prometheus`
 
-Workflow versionado: `.github/workflows/ci.yml`
+## Testes
 
-- trigger:
-  - `push` nas branches `develop` e `main`
-  - `pull_request` para branch `main`
-- pipeline: checkout -> Java 21 -> cache Maven -> `./mvnw -B clean verify`
-- falha se testes ou gate de cobertura (80%) falharem
+Suite atual em `src/test/java/br/com/itau/calculadoratributos` cobre:
 
-## O que foi corrigido em relacao ao baseline do desafio
+- validacao de contrato HTTP e mensagens de erro
+- regras de calculo e regressao de totais
+- idempotencia (incluindo concorrencia)
+- cenario de falha de integracao com retorno `502`
+- exposicao de endpoints de observabilidade (`health` e `prometheus`)
 
-- removido vazamento de estado entre execucoes
-- totals e tributos alinhados ao calculo real dos itens
-- idempotencia por payload com controle de concorrencia
-- tratamento de erro HTTP detalhado para facilitar correcao por quem integra
-- validacoes de contrato fortalecidas sem quebrar payload de entrada
-- arquitetura modularizada para facilitar manutencao e evolucao
+## CI
 
-## Arquitetura de referencia (Mermaid)
+Workflow: `.github/workflows/ci.yml`
 
-```mermaid
-flowchart LR
-    C[Cliente] --> G[API Gateway ou ALB]
-    G --> A[Servico Nota Fiscal - Spring Boot]
-    A --> AUTH[AuthN/AuthZ - Cognito ou IdP corporativo]
+- trigger: `push` (`develop`, `main`), `pull_request` para `main`, `workflow_dispatch`
+- pipeline principal: `./mvnw -B clean verify`
+- upload de artefatos: Surefire + JaCoCo
 
-    A --> EST[Estoque Service Simulado]
-    A --> REG[Registro Service Simulado]
-    A --> ENT[Entrega Integration Simulada]
-    A --> FIN[Financeiro Service Simulado]
+## Arquitetura
 
-    A --> RDS[(RDS PostgreSQL)]
-    A --> MQ[(SQS/SNS)]
+### Desenho arquitetural da solucao e entorno
 
-    A --> LOG[CloudWatch Logs]
-    A --> MET[CloudWatch Metrics / Prometheus]
-    A --> TRC[X-Ray / OpenTelemetry]
-```
+- Fluxo de system design implementado: `docs/architecture/system-design-mermaid.txt`
+- Arquitetura de referencia em nuvem (AWS): `docs/architecture/reference-aws-mermaid.txt`
 
-## Trade-offs e proximos passos
+### Principais componentes e responsabilidades
 
-- contrato de resposta foi mantido compativel; nao ha campo explicito de total final consolidado
-- valores monetarios de contrato seguem `double`, com calculo interno em `BigDecimal`
-- store de idempotencia atual e in-memory
+- `GeradorNFController`: entrada HTTP, validacao de request e metricas de endpoint
+- `GeradorNotaFiscalServiceImpl`: orquestracao principal (validacao, subtotal, frete, tributos, idempotencia)
+- `FreteCalculator`: regra de frete por regiao com arredondamento monetario
+- `TributacaoAliquotaResolver` + strategies: selecao de aliquota por tipo/regime
+- `NotaFiscalIntegracaoFacade`: disparo paralelo de integracoes, retries, metricas e logs
+- `InMemoryNotaFiscalIdempotencyStore`: deduplicacao por payload e controle de concorrencia
+- `ApiExceptionHandler`: contrato padrao de erros (`400`, `502`, `500`)
+- `CorrelationIdFilter`: correlacao fim a fim via `Xitau-Correlation-Id` e MDC
 
-Proximos passos recomendados:
+### Visao das integracoes, autenticacao, gateway e contexto AWS
 
-1. persistir nota fiscal e idempotencia em storage duravel
-2. implementar retries com backoff para integracoes externas
-3. adicionar correlation-id por request em todos os logs
-4. enriquecer resposta com subtotal/tributos/total final sem quebrar compatibilidade
+- Integracoes externas simuladas: estoque, registro, entrega e financeiro
+- Gateway de borda recomendado: API Gateway ou ALB (conforme `reference-aws-mermaid.txt`)
+- Autenticacao/autorizacao: proposta de evolucao com Cognito/IdP corporativo (nao implementado no core atual)
+- Contexto AWS recomendado para escala:
+  - computacao: ECS Fargate (ou EKS)
+  - dados: RDS (nota fiscal) e/ou DynamoDB/Redis (idempotencia)
+  - mensageria: SQS/SNS para desacoplamento de integracoes
+  - operacao: CloudWatch + Prometheus/Grafana + tracing (X-Ray/OpenTelemetry)
 
+## Entrega e operacao
+
+### Estrategia de build e deploy
+
+- Build padrao: `./mvnw -B clean verify`
+- Gate de qualidade: JaCoCo minimo de `80%` bloqueando o `verify`
+- Empacotamento recomendado: `./mvnw spring-boot:build-image`
+- Deploy proposto:
+  1. publicar imagem em registry (GHCR/ECR)
+  2. promover para homologacao
+  3. executar smoke test (`/actuator/health`)
+  4. promover para producao com estrategia gradual e rollback por imagem
+
+### Observabilidade, logging e monitoramento (implementado + recomendacoes)
+
+- Implementado:
+  - logs JSON via `logback-spring.xml` com MDC (`correlation_id`, `id_pedido`, `id_nota_fiscal`, `idempotency_key`)
+  - metricas de etapa, endpoint, erro HTTP e integracoes
+  - endpoints Actuator: `health`, `info`, `metrics`, `prometheus`
+- Recomendacoes operacionais:
+  - alertar aumento de `5xx`/`502` por janela
+  - alertar degradacao de latencia `p95/p99`
+  - alertar falhas consecutivas por integracao
+  - criar dashboards por endpoint e por integracao critica (Grafana/DataDog)
+
+### Pipeline de entrega continua (estado atual e evolucao)
+
+- Estado atual em `.github/workflows/ci.yml`:
+  - triggers: `push` (`develop`, `main`), `pull_request` (`main`) e `workflow_dispatch`
+  - executa `clean verify`
+  - publica artefatos de teste e cobertura
+- Evolucao recomendada:
+  1. job de build de imagem em branch principal
+  2. job de deploy em homologacao
+  3. gate manual para producao
+  4. job automatizado de rollback e notificacao em falha
