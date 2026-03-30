@@ -12,13 +12,14 @@ import br.com.itau.geradornotafiscal.service.CalculadoraAliquotaProduto;
 import br.com.itau.geradornotafiscal.service.FreteCalculator;
 import br.com.itau.geradornotafiscal.service.GeradorNotaFiscalService;
 import br.com.itau.geradornotafiscal.service.exception.BadRequestException;
+import br.com.itau.geradornotafiscal.service.idempotency.NotaFiscalIdempotencyStore;
+import br.com.itau.geradornotafiscal.service.idempotency.PedidoIdempotencyKeyGenerator;
 import br.com.itau.geradornotafiscal.service.tax.TributacaoAliquotaResolver;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,21 +30,32 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
     private final TributacaoAliquotaResolver tributacaoAliquotaResolver;
     private final FreteCalculator freteCalculator;
     private final NotaFiscalIntegracaoFacade notaFiscalIntegracaoFacade;
+    private final NotaFiscalIdempotencyStore idempotencyStore;
+    private final PedidoIdempotencyKeyGenerator idempotencyKeyGenerator;
 
     public GeradorNotaFiscalServiceImpl(CalculadoraAliquotaProduto calculadoraAliquotaProduto,
                                         TributacaoAliquotaResolver tributacaoAliquotaResolver,
                                         FreteCalculator freteCalculator,
-                                        NotaFiscalIntegracaoFacade notaFiscalIntegracaoFacade) {
+                                        NotaFiscalIntegracaoFacade notaFiscalIntegracaoFacade,
+                                        NotaFiscalIdempotencyStore idempotencyStore,
+                                        PedidoIdempotencyKeyGenerator idempotencyKeyGenerator) {
         this.calculadoraAliquotaProduto = calculadoraAliquotaProduto;
         this.tributacaoAliquotaResolver = tributacaoAliquotaResolver;
         this.freteCalculator = freteCalculator;
         this.notaFiscalIntegracaoFacade = notaFiscalIntegracaoFacade;
+        this.idempotencyStore = idempotencyStore;
+        this.idempotencyKeyGenerator = idempotencyKeyGenerator;
     }
 
     @Override
     public NotaFiscal gerarNotaFiscal(Pedido pedido) {
         validarPedido(pedido);
 
+        String idempotencyKey = idempotencyKeyGenerator.generate(pedido);
+        return idempotencyStore.execute(idempotencyKey, () -> gerarNovaNotaFiscal(pedido));
+    }
+
+    private NotaFiscal gerarNovaNotaFiscal(Pedido pedido) {
         List<Item> itensPedido = pedido.getItens();
         BigDecimal subtotal = calcularSubtotal(pedido.getItens());
 

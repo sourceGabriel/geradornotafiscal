@@ -12,6 +12,9 @@ import br.com.itau.geradornotafiscal.model.TipoPessoa;
 import br.com.itau.geradornotafiscal.port.out.EntregaIntegrationPort;
 import br.com.itau.geradornotafiscal.service.CalculadoraAliquotaProduto;
 import br.com.itau.geradornotafiscal.service.FreteCalculator;
+import br.com.itau.geradornotafiscal.service.exception.IntegracaoNotaFiscalException;
+import br.com.itau.geradornotafiscal.service.idempotency.InMemoryNotaFiscalIdempotencyStore;
+import br.com.itau.geradornotafiscal.service.idempotency.PedidoIdempotencyKeyGenerator;
 import br.com.itau.geradornotafiscal.service.impl.GeradorNotaFiscalServiceImpl;
 import br.com.itau.geradornotafiscal.service.impl.NotaFiscalIntegracaoFacade;
 import br.com.itau.geradornotafiscal.service.tax.LucroPresumidoAliquotaStrategy;
@@ -25,18 +28,30 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 class GeradorNotaFiscalServiceImplTest {
 
     private GeradorNotaFiscalServiceImpl geradorNotaFiscalService;
+    private NotaFiscalIntegracaoFacade notaFiscalIntegracaoFacade;
 
     @BeforeEach
     void setup() {
+        notaFiscalIntegracaoFacade = mock(NotaFiscalIntegracaoFacade.class);
         TributacaoAliquotaResolver resolver = new TributacaoAliquotaResolver(List.of(
                 new PessoaFisicaAliquotaStrategy(),
                 new SimplesNacionalAliquotaStrategy(),
@@ -48,7 +63,9 @@ class GeradorNotaFiscalServiceImplTest {
                 new CalculadoraAliquotaProduto(),
                 resolver,
                 new FreteCalculator(),
-                mock(NotaFiscalIntegracaoFacade.class)
+                notaFiscalIntegracaoFacade,
+                new InMemoryNotaFiscalIdempotencyStore(600, 30),
+                new PedidoIdempotencyKeyGenerator()
         );
     }
 
@@ -132,6 +149,49 @@ class GeradorNotaFiscalServiceImplTest {
         );
 
         assertTrue(exception.getMessage().contains("Endereco de entrega com regiao e obrigatorio"));
+    }
+
+    @Test
+    void shouldProcessOnlyOnceForConcurrentRequestsWithSamePayload() throws Exception {
+        doAnswer(invocation -> {
+            Thread.sleep(150);
+            return null;
+        }).when(notaFiscalIntegracaoFacade).executarIntegracoes(any());
+
+        Pedido pedido = criarPedido(TipoPessoa.FISICA, null, List.of(
+                criarItem("1", 100.0, 1),
+                criarItem("2", 50.0, 1)
+        ), 10.0);
+
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        try {
+            List<CompletableFuture<NotaFiscal>> futures = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                futures.add(CompletableFuture.supplyAsync(() -> geradorNotaFiscalService.gerarNotaFiscal(pedido), executor));
+            }
+
+            List<NotaFiscal> notas = futures.stream().map(CompletableFuture::join).toList();
+            Set<String> ids = notas.stream().map(NotaFiscal::getIdNotaFiscal).collect(java.util.stream.Collectors.toSet());
+
+            assertEquals(1, ids.size());
+            verify(notaFiscalIntegracaoFacade, times(1)).executarIntegracoes(any());
+        } finally {
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(2, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void shouldReuseFailedResultWithoutDuplicateProcessingBeforeFailedTtlExpires() {
+        doThrow(new IntegracaoNotaFiscalException("Falha ao executar integracoes da nota fiscal: entrega"))
+                .when(notaFiscalIntegracaoFacade).executarIntegracoes(any());
+
+        Pedido pedido = criarPedido(TipoPessoa.FISICA, null, List.of(criarItem("1", 100.0, 1)), 10.0);
+
+        assertThrows(IntegracaoNotaFiscalException.class, () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
+        assertThrows(IntegracaoNotaFiscalException.class, () -> geradorNotaFiscalService.gerarNotaFiscal(pedido));
+
+        verify(notaFiscalIntegracaoFacade, times(1)).executarIntegracoes(any());
     }
 
     private Pedido criarPedido(TipoPessoa tipoPessoa, RegimeTributacaoPJ regime, List<Item> itens, double frete) {

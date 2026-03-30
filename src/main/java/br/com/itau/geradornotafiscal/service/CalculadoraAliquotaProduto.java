@@ -16,17 +16,17 @@ public class CalculadoraAliquotaProduto {
         List<ItemNotaFiscal> itemNotaFiscalList = new ArrayList<>();
 
         for (Item item : items) {
-            BigDecimal valorUnitario = BigDecimal.valueOf(item.getValorUnitario());
+            BigDecimal valorUnitario = BigDecimal.valueOf(item.getValorUnitario()).setScale(2, RoundingMode.HALF_UP);
             BigDecimal quantidade = BigDecimal.valueOf(item.getQuantidade());
-            BigDecimal valorTotalItem = valorUnitario.multiply(quantidade);
+            BigDecimal valorTotalItem = valorUnitario.multiply(quantidade).setScale(2, RoundingMode.HALF_UP);
             BigDecimal valorTributo = valorTotalItem.multiply(aliquotaPercentual).setScale(2, RoundingMode.HALF_UP);
 
             ItemNotaFiscal itemNotaFiscal = ItemNotaFiscal.builder()
                     .idItem(item.getIdItem())
                     .descricao(item.getDescricao())
-                    .valorUnitario(valorUnitario.setScale(2, RoundingMode.HALF_UP).doubleValue())
-                    .quantidade(item.getQuantidade())
+                    .valorUnitario(valorUnitario.doubleValue())
                     .valorTributoItem(valorTributo.doubleValue())
+                    .quantidade(item.getQuantidade())
                     .build();
             itemNotaFiscalList.add(itemNotaFiscal);
         }

@@ -5,5 +5,9 @@ public class IntegracaoNotaFiscalException extends RuntimeException {
     public IntegracaoNotaFiscalException(String message) {
         super(message);
     }
+
+    public IntegracaoNotaFiscalException(String message, Throwable cause) {
+        super(message, cause);
+    }
 }
 
