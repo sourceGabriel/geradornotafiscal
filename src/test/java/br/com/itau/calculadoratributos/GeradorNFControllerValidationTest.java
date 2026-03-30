@@ -3,6 +3,7 @@ package br.com.itau.calculadoratributos;
 import br.com.itau.geradornotafiscal.GeradorNotaFiscalApplication;
 import br.com.itau.geradornotafiscal.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.service.GeradorNotaFiscalService;
+import br.com.itau.geradornotafiscal.service.exception.BadRequestException;
 import br.com.itau.geradornotafiscal.service.exception.IntegracaoNotaFiscalException;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
@@ -48,6 +49,49 @@ class GeradorNFControllerValidationTest {
                         .content(payload))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Dados de entrada invalidos"));
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenValorTotalItensDivergesFromCalculatedSubtotal() throws Exception {
+        when(geradorNotaFiscalService.gerarNotaFiscal(any()))
+                .thenThrow(new BadRequestException("valor_total_itens divergente do subtotal calculado. informado=1.00 calculado=100.00"));
+
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 1.0,
+                  "valor_frete": 10.0,
+                  "itens": [
+                    {
+                      "id_item": "1",
+                      "descricao": "Teclado USB",
+                      "valor_unitario": 50.0,
+                      "quantidade": 2
+                    }
+                  ],
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "FISICA",
+                    "enderecos": [
+                      {
+                        "logradouro": "Av do estado",
+                        "numero": "5533",
+                        "estado": "SP",
+                        "cep": "03105003",
+                        "finalidade": "ENTREGA",
+                        "regiao": "SUDESTE"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("valor_total_itens divergente")));
     }
 
     @Test
@@ -305,6 +349,127 @@ class GeradorNFControllerValidationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Payload JSON invalido"))
                 .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("campo_desconhecido")));
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenEnumValueIsInvalid() throws Exception {
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 100.0,
+                  "valor_frete": 10.0,
+                  "itens": [
+                    {
+                      "id_item": "1",
+                      "descricao": "Teclado USB",
+                      "valor_unitario": 50.0,
+                      "quantidade": 2
+                    }
+                  ],
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "PESSOA_X",
+                    "enderecos": [
+                      {
+                        "logradouro": "Av do estado",
+                        "numero": "5533",
+                        "estado": "SP",
+                        "cep": "03105003",
+                        "finalidade": "ENTREGA",
+                        "regiao": "SUDESTE"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Payload JSON invalido"))
+                .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("tipo_pessoa")));
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenEnderecoRequiredFieldIsMissing() throws Exception {
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 100.0,
+                  "valor_frete": 10.0,
+                  "itens": [
+                    {
+                      "id_item": "1",
+                      "descricao": "Teclado USB",
+                      "valor_unitario": 50.0,
+                      "quantidade": 2
+                    }
+                  ],
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "FISICA",
+                    "enderecos": [
+                      {
+                        "logradouro": "Av do estado",
+                        "numero": "5533",
+                        "estado": "SP",
+                        "cep": "03105003",
+                        "finalidade": "ENTREGA"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Dados de entrada invalidos"))
+                .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("regiao")));
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenEnderecoFinalidadeIsMissing() throws Exception {
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 100.0,
+                  "valor_frete": 10.0,
+                  "itens": [
+                    {
+                      "id_item": "1",
+                      "descricao": "Teclado USB",
+                      "valor_unitario": 50.0,
+                      "quantidade": 2
+                    }
+                  ],
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "FISICA",
+                    "enderecos": [
+                      {
+                        "logradouro": "Av do estado",
+                        "numero": "5533",
+                        "estado": "SP",
+                        "cep": "03105003",
+                        "regiao": "SUDESTE"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Dados de entrada invalidos"))
+                .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("finalidade")));
     }
 
     private String readClasspathPayload(String path) throws Exception {

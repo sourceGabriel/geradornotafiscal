@@ -49,15 +49,14 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
 
     @Override
     public NotaFiscal gerarNotaFiscal(Pedido pedido) {
-        validarPedido(pedido);
+        BigDecimal subtotal = validarPedidoERetornarSubtotal(pedido);
 
         String idempotencyKey = idempotencyKeyGenerator.generate(pedido);
-        return idempotencyStore.execute(idempotencyKey, () -> gerarNovaNotaFiscal(pedido));
+        return idempotencyStore.execute(idempotencyKey, () -> gerarNovaNotaFiscal(pedido, subtotal));
     }
 
-    private NotaFiscal gerarNovaNotaFiscal(Pedido pedido) {
+    private NotaFiscal gerarNovaNotaFiscal(Pedido pedido, BigDecimal subtotal) {
         List<Item> itensPedido = pedido.getItens();
-        BigDecimal subtotal = calcularSubtotal(pedido.getItens());
 
         Destinatario destinatario = pedido.getDestinatario();
         BigDecimal aliquota = tributacaoAliquotaResolver.resolverAliquota(subtotal, destinatario);
@@ -79,7 +78,7 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         return notaFiscal;
     }
 
-    private void validarPedido(Pedido pedido) {
+    private BigDecimal validarPedidoERetornarSubtotal(Pedido pedido) {
         if (pedido == null) {
             throw new BadRequestException("Pedido e obrigatorio");
         }
@@ -95,6 +94,18 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         if (pedido.getDestinatario().getTipoPessoa() == null) {
             throw new BadRequestException("tipo_pessoa e obrigatorio");
         }
+
+        BigDecimal subtotalCalculado = calcularSubtotal(pedido.getItens());
+        BigDecimal totalInformado = BigDecimal.valueOf(pedido.getValorTotalItens()).setScale(2, RoundingMode.HALF_UP);
+
+        if (totalInformado.compareTo(subtotalCalculado) != 0) {
+            throw new BadRequestException(
+                    "valor_total_itens divergente do subtotal calculado. informado="
+                            + totalInformado + " calculado=" + subtotalCalculado
+            );
+        }
+
+        return subtotalCalculado;
     }
 
     private BigDecimal calcularSubtotal(List<Item> itensPedido) {
@@ -111,8 +122,6 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         }
 
         return destinatario.getEnderecos().stream()
-                .filter(endereco -> endereco.getFinalidade() == Finalidade.ENTREGA
-                        || endereco.getFinalidade() == Finalidade.COBRANCA_ENTREGA)
                 .map(Endereco::getRegiao)
                 .filter(regiao -> regiao != null)
                 .findFirst()

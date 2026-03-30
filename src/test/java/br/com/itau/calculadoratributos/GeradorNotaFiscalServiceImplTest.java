@@ -41,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -89,14 +90,30 @@ class GeradorNotaFiscalServiceImplTest {
     }
 
     @Test
-    void shouldCalculateConsistentTotalsAndTaxesIgnoringInconsistentPedidoTotal() {
+    void shouldRejectPedidoWhenValorTotalItensDivergesFromCalculatedSubtotal() {
         Pedido pedido = criarPedido(TipoPessoa.JURIDICA, RegimeTributacaoPJ.LUCRO_PRESUMIDO, List.of(
                 criarItem("a", 1000.0, 3),
                 criarItem("b", 500.0, 6)
         ), 100.0);
 
-        // valor de entrada inconsistente proposital para garantir consistencia da nota calculada.
+        // Valor inconsistente proposital para validar rejeicao do request por seguranca financeira.
         pedido.setValorTotalItens(1.0);
+
+        BadRequestException exception = assertThrows(
+                BadRequestException.class,
+                () -> geradorNotaFiscalService.gerarNotaFiscal(pedido)
+        );
+
+        assertTrue(exception.getMessage().contains("valor_total_itens divergente"));
+        verify(notaFiscalIntegracaoFacade, never()).executarIntegracoes(any());
+    }
+
+    @Test
+    void shouldCalculateConsistentTotalsAndTaxesWhenValorTotalItensMatchesSubtotal() {
+        Pedido pedido = criarPedido(TipoPessoa.JURIDICA, RegimeTributacaoPJ.LUCRO_PRESUMIDO, List.of(
+                criarItem("a", 1000.0, 3),
+                criarItem("b", 500.0, 6)
+        ), 100.0);
 
         NotaFiscal notaFiscal = geradorNotaFiscalService.gerarNotaFiscal(pedido);
 
@@ -104,9 +121,6 @@ class GeradorNotaFiscalServiceImplTest {
         assertEquals(104.80, notaFiscal.getValorFrete(), 0.001);
         assertEquals(600.00, notaFiscal.getItens().get(0).getValorTributoItem(), 0.001);
         assertEquals(600.00, notaFiscal.getItens().get(1).getValorTributoItem(), 0.001);
-
-        double totalTributos = notaFiscal.getItens().stream().mapToDouble(item -> item.getValorTributoItem()).sum();
-        assertEquals(1200.00, totalTributos, 0.001);
     }
 
     @Test
@@ -141,6 +155,7 @@ class GeradorNotaFiscalServiceImplTest {
         Pedido pedido = new Pedido();
         pedido.setDestinatario(destinatario);
         pedido.setValorFrete(10.0);
+        pedido.setValorTotalItens(100.0);
         pedido.setItens(List.of(criarItem("1", 100.0, 1)));
 
         BadRequestException exception = assertThrows(
@@ -203,7 +218,9 @@ class GeradorNotaFiscalServiceImplTest {
         Pedido pedido = new Pedido();
         pedido.setItens(itens);
         pedido.setValorFrete(frete);
-        pedido.setValorTotalItens(99999.0);
+        pedido.setValorTotalItens(itens.stream()
+                .mapToDouble(item -> item.getValorUnitario() * item.getQuantidade())
+                .sum());
         pedido.setDestinatario(destinatario);
         return pedido;
     }
