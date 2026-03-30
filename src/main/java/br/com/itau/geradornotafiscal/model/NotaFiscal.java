@@ -11,6 +11,9 @@ import lombok.*;
 @Getter
 @Setter
 @NoArgsConstructor
+/**
+ * Representa a resposta de nota fiscal processada pela aplicacao.
+ */
 public class NotaFiscal {
     @JsonProperty("id_nota_fiscal")
     private String idNotaFiscal;
@@ -24,9 +27,16 @@ public class NotaFiscal {
     @JsonProperty("valor_frete")
     private double valorFrete;
 
+    @JsonProperty("valor_total_tributos")
+    private double valorTotalTributos;
+
+    @JsonProperty("valor_total_nota")
+    private double valorTotalNota;
+
     @JsonProperty("itens")
     private List<ItemNotaFiscal> itens;
     @JsonProperty("destinatario")
     private Destinatario destinatario;
+
 
 }

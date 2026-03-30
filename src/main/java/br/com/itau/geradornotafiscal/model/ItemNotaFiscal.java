@@ -8,6 +8,9 @@ import lombok.*;
 @AllArgsConstructor
 @Builder
 @NoArgsConstructor
+/**
+ * Item processado da nota fiscal com valor de tributo calculado.
+ */
 public class ItemNotaFiscal {
     @JsonProperty("id_item")
     private String idItem;
