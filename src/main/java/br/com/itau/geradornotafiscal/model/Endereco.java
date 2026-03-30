@@ -26,6 +26,15 @@ public class Endereco {
     @JsonProperty("estado")
     private String estado;
 
+    @JsonProperty("bairro")
+    private String bairro;
+
+    @JsonProperty("cidade")
+    private String cidade;
+
+    @JsonProperty("pais")
+    private String pais;
+
     @JsonProperty("complemento")
     private String complemento;
 

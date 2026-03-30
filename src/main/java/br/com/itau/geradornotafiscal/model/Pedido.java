@@ -7,6 +7,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.*;
 
 @Builder
@@ -16,15 +18,20 @@ import lombok.*;
 @NoArgsConstructor
 public class Pedido {
 	 @JsonProperty("id_pedido")
+	    @NotNull(message = "id_pedido e obrigatorio")
+	    @Positive(message = "id_pedido deve ser maior que zero")
 	    private Long idPedido;
 
 	    @JsonProperty("data")
+	    @NotNull(message = "data e obrigatoria")
 	    private LocalDate data;
 
 	    @JsonProperty("valor_total_itens")
+	    @PositiveOrZero(message = "valor_total_itens nao pode ser negativo")
 	    private double valorTotalItens;
 
 	    @JsonProperty("valor_frete")
+	    @PositiveOrZero(message = "valor_frete nao pode ser negativo")
 	    private double valorFrete;
 
 	    @JsonProperty("itens")
