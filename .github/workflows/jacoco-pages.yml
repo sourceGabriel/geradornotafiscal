@@ -2,7 +2,7 @@ name: jacoco-pages
 
 on:
   push:
-    branches: ["main"]
+    branches: ["master", "main"]
   workflow_dispatch:
 
 permissions:
