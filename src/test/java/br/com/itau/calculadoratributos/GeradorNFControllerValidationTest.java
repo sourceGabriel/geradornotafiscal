@@ -501,6 +501,115 @@ class GeradorNFControllerValidationTest {
                 .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("finalidade")));
     }
 
+    @Test
+    void shouldReturnBadRequestWhenPayloadHasMismatchedInputType() throws Exception {
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 100.0,
+                  "valor_frete": 10.0,
+                  "itens": "deveria ser array",
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "FISICA",
+                    "enderecos": [
+                      {
+                        "logradouro": "Av do estado",
+                        "numero": "5533",
+                        "estado": "SP",
+                        "cep": "03105003",
+                        "finalidade": "ENTREGA",
+                        "regiao": "SUDESTE"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Payload JSON invalido"))
+                .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("itens")));
+    }
+
+    @Test
+    void shouldReturnBadRequestWhenPayloadHasMalformedJson() throws Exception {
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 100.0,
+                  "valor_frete": 10.0,
+                  "itens": [
+                    {
+                      "id_item": "1",
+                      "descricao": "Teclado USB",
+                      "valor_unitario": 50.0,
+                      "quantidade": 2
+                    }
+                  ],
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "FISICA"
+                  }
+                
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Payload JSON invalido"))
+                .andExpect(jsonPath("$.details[0]").value(org.hamcrest.Matchers.containsString("Nao foi possivel interpretar o JSON enviado")));
+    }
+
+    @Test
+    void shouldReturnInternalServerErrorWhenUnexpectedRuntimeExceptionOccurs() throws Exception {
+        when(geradorNotaFiscalService.gerarNotaFiscal(any()))
+                .thenThrow(new RuntimeException("falha inesperada"));
+
+        String payload = """
+                {
+                  "id_pedido": 1,
+                  "data": "2022-05-01",
+                  "valor_total_itens": 100.0,
+                  "valor_frete": 10.0,
+                  "itens": [
+                    {
+                      "id_item": "1",
+                      "descricao": "Teclado USB",
+                      "valor_unitario": 50.0,
+                      "quantidade": 2
+                    }
+                  ],
+                  "destinatario": {
+                    "nome": "John Doe",
+                    "tipo_pessoa": "FISICA",
+                    "enderecos": [
+                      {
+                        "logradouro": "Av do estado",
+                        "numero": "5533",
+                        "estado": "SP",
+                        "cep": "03105003",
+                        "finalidade": "ENTREGA",
+                        "regiao": "SUDESTE"
+                      }
+                    ]
+                  }
+                }
+                """;
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.message").value("Erro inesperado ao processar requisicao"))
+                .andExpect(jsonPath("$.details[0]").value("RuntimeException"));
+    }
+
     private String readClasspathPayload(String path) throws Exception {
         ClassPathResource resource = new ClassPathResource(path);
         try (var inputStream = resource.getInputStream()) {
