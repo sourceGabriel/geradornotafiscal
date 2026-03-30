@@ -5,6 +5,7 @@ import br.com.itau.geradornotafiscal.service.exception.IntegracaoNotaFiscalExcep
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,9 +27,15 @@ import java.util.stream.Collectors;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+    private final MeterRegistry meterRegistry;
+
+    public ApiExceptionHandler(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
 
     @ExceptionHandler(BadRequestException.class)
     public ResponseEntity<ApiErrorResponse> handleBadRequest(BadRequestException ex) {
+        registrarErroHttp("400");
         log.warn("Requisicao invalida: {}", ex.getMessage());
         ApiErrorResponse response = new ApiErrorResponse(
                 LocalDateTime.now(),
@@ -42,6 +49,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiErrorResponse> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
+        registrarErroHttp("400");
         List<String> details = ex.getBindingResult()
                 .getFieldErrors()
                 .stream()
@@ -62,6 +70,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ApiErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+        registrarErroHttp("400");
         List<String> details = extractDeserializationDetails(ex);
         log.warn("Payload invalido: {}", details);
         log.debug("Stacktrace de erro de desserializacao", ex);
@@ -78,6 +87,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(IntegracaoNotaFiscalException.class)
     public ResponseEntity<ApiErrorResponse> handleIntegracao(IntegracaoNotaFiscalException ex) {
+        registrarErroHttp("502");
         log.error("Falha em integracao externa: {}", ex.getMessage(), ex);
         ApiErrorResponse response = new ApiErrorResponse(
                 LocalDateTime.now(),
@@ -91,6 +101,7 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleGeneric(Exception ex) {
+        registrarErroHttp("500");
         log.error("Erro inesperado ao processar requisicao", ex);
         ApiErrorResponse response = new ApiErrorResponse(
                 LocalDateTime.now(),
@@ -164,5 +175,9 @@ public class ApiExceptionHandler {
         }
 
         return targetType.getSimpleName();
+    }
+
+    private void registrarErroHttp(String status) {
+        meterRegistry.counter("nota_fiscal.http.errors", "status", status).increment();
     }
 }

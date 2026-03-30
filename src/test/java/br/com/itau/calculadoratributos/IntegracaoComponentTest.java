@@ -9,6 +9,7 @@ import br.com.itau.geradornotafiscal.service.impl.EstoqueService;
 import br.com.itau.geradornotafiscal.service.impl.FinanceiroService;
 import br.com.itau.geradornotafiscal.service.impl.NotaFiscalIntegracaoFacade;
 import br.com.itau.geradornotafiscal.service.impl.RegistroService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.verify;
 class IntegracaoComponentTest {
 
     private final ExecutorService executorService = Executors.newFixedThreadPool(4);
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @AfterEach
     void cleanupInterrupt() {
@@ -69,7 +71,7 @@ class IntegracaoComponentTest {
 
     @Test
     void shouldWrapInterruptedExceptionInEntregaPort() {
-        EntregaIntegrationPort port = new EntregaIntegrationPort();
+        EntregaIntegrationPort port = new EntregaIntegrationPort(new ObjectMapper());
 
         Thread.currentThread().interrupt();
         assertThrows(RuntimeException.class, () -> port.criarAgendamentoEntrega(notaFiscalComUmItem()));
@@ -99,7 +101,8 @@ class IntegracaoComponentTest {
                 registro,
                 entrega,
                 financeiro,
-                executorService
+                executorService,
+                objectMapper
         );
 
         NotaFiscal notaFiscal = notaFiscalComUmItem();
@@ -127,7 +130,8 @@ class IntegracaoComponentTest {
                 registro,
                 entrega,
                 financeiro,
-                executorService
+                executorService,
+                objectMapper
         );
 
         IntegracaoNotaFiscalException ex = assertThrows(

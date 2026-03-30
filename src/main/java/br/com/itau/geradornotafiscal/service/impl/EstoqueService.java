@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class EstoqueService {
+
     public void enviarNotaFiscalParaBaixaEstoque(NotaFiscal notaFiscal) {
         try {
             // Simula envio de nota fiscal para baixa de estoque.

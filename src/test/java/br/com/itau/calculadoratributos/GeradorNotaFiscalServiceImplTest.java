@@ -23,6 +23,8 @@ import br.com.itau.geradornotafiscal.service.tax.PessoaFisicaAliquotaStrategy;
 import br.com.itau.geradornotafiscal.service.tax.SimplesNacionalAliquotaStrategy;
 import br.com.itau.geradornotafiscal.service.tax.TributacaoAliquotaResolver;
 import br.com.itau.geradornotafiscal.service.exception.BadRequestException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -66,7 +68,8 @@ class GeradorNotaFiscalServiceImplTest {
                 new FreteCalculator(),
                 notaFiscalIntegracaoFacade,
                 new InMemoryNotaFiscalIdempotencyStore(600, 30),
-                new PedidoIdempotencyKeyGenerator()
+                new PedidoIdempotencyKeyGenerator(),
+                new SimpleMeterRegistry()
         );
     }
 
@@ -121,11 +124,13 @@ class GeradorNotaFiscalServiceImplTest {
         assertEquals(104.80, notaFiscal.getValorFrete(), 0.001);
         assertEquals(600.00, notaFiscal.getItens().get(0).getValorTributoItem(), 0.001);
         assertEquals(600.00, notaFiscal.getItens().get(1).getValorTributoItem(), 0.001);
+        assertEquals(1200.00, notaFiscal.getValorTotalTributos(), 0.001);
+        assertEquals(6104.80, notaFiscal.getValorTotalNota(), 0.001);
     }
 
     @Test
     void shouldApplyAdditionalLatencyOnlyForRealLargeItemSets() {
-        EntregaIntegrationPort integrationPort = new EntregaIntegrationPort();
+        EntregaIntegrationPort integrationPort = new EntregaIntegrationPort(new ObjectMapper());
 
         NotaFiscal notaComSeteItens = NotaFiscal.builder().itens(criarItensNota(7)).build();
         NotaFiscal notaComDoisItens = NotaFiscal.builder().itens(criarItensNota(2)).build();

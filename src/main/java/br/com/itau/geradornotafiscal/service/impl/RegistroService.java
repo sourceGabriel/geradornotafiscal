@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RegistroService {
+
     public void registrarNotaFiscal(NotaFiscal notaFiscal) {
         try {
             // Simula o registro da nota fiscal.

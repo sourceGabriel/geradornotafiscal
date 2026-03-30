@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <springProperty scope="context" name="appName" source="spring.application.name" defaultValue="geradornotafiscal"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>{"timestamp":"%date{yyyy-MM-dd'T'HH:mm:ss.SSSXXX}","level":"%level","service":"${appName}","correlation_id":"%mdc{correlation_id:-}","id_pedido":"%mdc{id_pedido:-}","id_nota_fiscal":"%mdc{id_nota_fiscal:-}","idempotency_key":"%mdc{idempotency_key:-}","thread":"%thread","logger":"%logger{36}","message":"%replace(%msg){'"','\\"'}"}%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>
+

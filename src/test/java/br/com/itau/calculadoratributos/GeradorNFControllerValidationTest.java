@@ -5,6 +5,7 @@ import br.com.itau.geradornotafiscal.model.NotaFiscal;
 import br.com.itau.geradornotafiscal.service.GeradorNotaFiscalService;
 import br.com.itau.geradornotafiscal.service.exception.BadRequestException;
 import br.com.itau.geradornotafiscal.service.exception.IntegracaoNotaFiscalException;
+import br.com.itau.geradornotafiscal.web.filter.CorrelationIdFilter;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +21,7 @@ import java.time.LocalDateTime;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -115,6 +117,26 @@ class GeradorNFControllerValidationTest {
     }
 
     @Test
+    void shouldReturnCorrelationHeaderWhenMissing() throws Exception {
+        NotaFiscal notaFiscal = NotaFiscal.builder()
+                .idNotaFiscal("nf-correlation")
+                .data(LocalDateTime.of(2026, 3, 28, 14, 0, 0))
+                .valorTotalItens(100.00)
+                .valorFrete(10.48)
+                .build();
+
+        when(geradorNotaFiscalService.gerarNotaFiscal(any())).thenReturn(notaFiscal);
+
+        String payload = readClasspathPayload("paylods/teste-pf.json");
+
+        mockMvc.perform(post("/api/pedido/gerarNotaFiscal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isOk())
+                .andExpect(header().exists(CorrelationIdFilter.CORRELATION_HEADER));
+    }
+
+    @Test
     void shouldAcceptImmutablePayloadExampleForPessoaJuridica() throws Exception {
         NotaFiscal notaFiscal = NotaFiscal.builder()
                 .idNotaFiscal("nf-pj")
@@ -141,6 +163,8 @@ class GeradorNFControllerValidationTest {
                 .data(LocalDateTime.of(2026, 3, 28, 14, 0, 0))
                 .valorTotalItens(100.00)
                 .valorFrete(10.48)
+                .valorTotalTributos(12.00)
+                .valorTotalNota(110.48)
                 .build();
 
         when(geradorNotaFiscalService.gerarNotaFiscal(any())).thenReturn(notaFiscal);
@@ -181,7 +205,12 @@ class GeradorNFControllerValidationTest {
                         .content(payload))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id_nota_fiscal").value("nf-123"))
-                .andExpect(jsonPath("$.valor_total_itens").value(100.0));
+                .andExpect(jsonPath("$.valor_total_itens").value(100.0))
+                .andExpect(jsonPath("$.valor_total_tributos").value(12.0))
+                .andExpect(jsonPath("$.valor_total_nota").value(110.48))
+                .andExpect(jsonPath("$.subtotal").doesNotExist())
+                .andExpect(jsonPath("$.total_tributos").doesNotExist())
+                .andExpect(jsonPath("$.total_final").doesNotExist());
     }
 
     @Test

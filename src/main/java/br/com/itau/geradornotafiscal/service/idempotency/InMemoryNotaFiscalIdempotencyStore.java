@@ -1,6 +1,9 @@
 package br.com.itau.geradornotafiscal.service.idempotency;
 
 import br.com.itau.geradornotafiscal.model.NotaFiscal;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -21,24 +24,36 @@ import java.util.function.Supplier;
 public class InMemoryNotaFiscalIdempotencyStore implements NotaFiscalIdempotencyStore {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(InMemoryNotaFiscalIdempotencyStore.class);
+    private static final String MDC_IDEMPOTENCY_KEY = "idempotency_key";
 
     private final Map<String, Entry> entries = new ConcurrentHashMap<>();
     private final long completedTtlMillis;
     private final long failedTtlMillis;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
     @Autowired
     public InMemoryNotaFiscalIdempotencyStore(
             @Value("${idempotencia.nota-fiscal.ttl-completed-seconds:600}") long completedTtlSeconds,
-            @Value("${idempotencia.nota-fiscal.ttl-failed-seconds:30}") long failedTtlSeconds
+            @Value("${idempotencia.nota-fiscal.ttl-failed-seconds:30}") long failedTtlSeconds,
+            MeterRegistry meterRegistry
     ) {
-        this(completedTtlSeconds, failedTtlSeconds, Clock.systemUTC());
+        this(completedTtlSeconds, failedTtlSeconds, Clock.systemUTC(), meterRegistry);
+    }
+
+    public InMemoryNotaFiscalIdempotencyStore(long completedTtlSeconds, long failedTtlSeconds) {
+        this(completedTtlSeconds, failedTtlSeconds, Clock.systemUTC(), new SimpleMeterRegistry());
     }
 
     InMemoryNotaFiscalIdempotencyStore(long completedTtlSeconds, long failedTtlSeconds, Clock clock) {
+        this(completedTtlSeconds, failedTtlSeconds, clock, new SimpleMeterRegistry());
+    }
+
+    InMemoryNotaFiscalIdempotencyStore(long completedTtlSeconds, long failedTtlSeconds, Clock clock, MeterRegistry meterRegistry) {
         this.completedTtlMillis = completedTtlSeconds * 1000;
         this.failedTtlMillis = failedTtlSeconds * 1000;
         this.clock = clock;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -46,6 +61,7 @@ public class InMemoryNotaFiscalIdempotencyStore implements NotaFiscalIdempotency
      * Executa operacao com deduplicacao concorrente por chave idempotente.
      */
     public NotaFiscal execute(String key, Supplier<NotaFiscal> operation) {
+        MDC.put(MDC_IDEMPOTENCY_KEY, key);
         long now = clock.millis();
         Entry candidate = Entry.inProgress();
         Entry entry = entries.compute(key, (ignored, existing) -> {
@@ -58,20 +74,27 @@ public class InMemoryNotaFiscalIdempotencyStore implements NotaFiscalIdempotency
         boolean owner = entry == candidate;
 
         if (!owner) {
-            LOGGER.info("idempotency_key={} state={} event=idempotency_reuse", key, entry.state);
-            return joinExisting(entry.future);
+            meterRegistry.counter("nota_fiscal.idempotency.reuse").increment();
+            LOGGER.info("idempotency_key= {} state= {} event= idempotency_reuse", key, entry.state);
+            try {
+                return joinExisting(entry.future);
+            } finally {
+                MDC.remove(MDC_IDEMPOTENCY_KEY);
+            }
         }
 
-        LOGGER.info("idempotency_key={} event=idempotency_owner_acquired", key);
+        LOGGER.info("idempotency_key= {} event= idempotency_owner_acquired", key);
         try {
             NotaFiscal notaFiscal = operation.get();
             complete(key, candidate.future, notaFiscal);
-            LOGGER.info("idempotency_key={} nota_fiscal={} event=idempotency_completed", key, notaFiscal.getIdNotaFiscal());
+            LOGGER.info("idempotency_key= {} nota_fiscal= {} event= idempotency_completed", key, notaFiscal.getIdNotaFiscal());
             return notaFiscal;
         } catch (RuntimeException ex) {
             fail(key, candidate.future, ex);
-            LOGGER.warn("idempotency_key={} event=idempotency_failed message={}", key, ex.getMessage());
+            LOGGER.warn("idempotency_key= {} event= idempotency_failed message= {}", key, ex.getMessage());
             throw ex;
+        } finally {
+            MDC.remove(MDC_IDEMPOTENCY_KEY);
         }
     }
 

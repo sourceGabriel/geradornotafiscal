@@ -2,7 +2,6 @@ package br.com.itau.geradornotafiscal.service.impl;
 
 import br.com.itau.geradornotafiscal.model.Destinatario;
 import br.com.itau.geradornotafiscal.model.Endereco;
-import br.com.itau.geradornotafiscal.model.Finalidade;
 import br.com.itau.geradornotafiscal.model.Item;
 import br.com.itau.geradornotafiscal.model.ItemNotaFiscal;
 import br.com.itau.geradornotafiscal.model.NotaFiscal;
@@ -15,12 +14,17 @@ import br.com.itau.geradornotafiscal.service.exception.BadRequestException;
 import br.com.itau.geradornotafiscal.service.idempotency.NotaFiscalIdempotencyStore;
 import br.com.itau.geradornotafiscal.service.idempotency.PedidoIdempotencyKeyGenerator;
 import br.com.itau.geradornotafiscal.service.tax.TributacaoAliquotaResolver;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.UUID;
 
 /**
@@ -30,25 +34,32 @@ import java.util.UUID;
 @Service
 public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(GeradorNotaFiscalServiceImpl.class);
+    private static final String MDC_IDEMPOTENCY_KEY = "idempotency_key";
+    private static final String MDC_ID_NOTA_FISCAL = "id_nota_fiscal";
+
     private final CalculadoraAliquotaProduto calculadoraAliquotaProduto;
     private final TributacaoAliquotaResolver tributacaoAliquotaResolver;
     private final FreteCalculator freteCalculator;
     private final NotaFiscalIntegracaoFacade notaFiscalIntegracaoFacade;
     private final NotaFiscalIdempotencyStore idempotencyStore;
     private final PedidoIdempotencyKeyGenerator idempotencyKeyGenerator;
+    private final MeterRegistry meterRegistry;
 
     public GeradorNotaFiscalServiceImpl(CalculadoraAliquotaProduto calculadoraAliquotaProduto,
                                         TributacaoAliquotaResolver tributacaoAliquotaResolver,
                                         FreteCalculator freteCalculator,
                                         NotaFiscalIntegracaoFacade notaFiscalIntegracaoFacade,
                                         NotaFiscalIdempotencyStore idempotencyStore,
-                                        PedidoIdempotencyKeyGenerator idempotencyKeyGenerator) {
+                                        PedidoIdempotencyKeyGenerator idempotencyKeyGenerator,
+                                        MeterRegistry meterRegistry) {
         this.calculadoraAliquotaProduto = calculadoraAliquotaProduto;
         this.tributacaoAliquotaResolver = tributacaoAliquotaResolver;
         this.freteCalculator = freteCalculator;
         this.notaFiscalIntegracaoFacade = notaFiscalIntegracaoFacade;
         this.idempotencyStore = idempotencyStore;
         this.idempotencyKeyGenerator = idempotencyKeyGenerator;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -56,16 +67,26 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
      */
     @Override
     public NotaFiscal gerarNotaFiscal(Pedido pedido) {
+        long inicioTotal = System.nanoTime();
+        long inicioValidacao = System.nanoTime();
         BigDecimal subtotal = validarPedidoERetornarSubtotal(pedido);
+        registrarTempoEtapa("validacao", inicioValidacao);
 
         String idempotencyKey = idempotencyKeyGenerator.generate(pedido);
-        return idempotencyStore.execute(idempotencyKey, () -> gerarNovaNotaFiscal(pedido, subtotal));
+        MDC.put(MDC_IDEMPOTENCY_KEY, idempotencyKey);
+        try {
+            return idempotencyStore.execute(idempotencyKey, () -> gerarNovaNotaFiscal(pedido, subtotal));
+        } finally {
+            registrarTempoEtapa("total", inicioTotal);
+            MDC.remove(MDC_IDEMPOTENCY_KEY);
+        }
     }
 
     /**
      * Monta a nota fiscal com base em subtotal validado e regras de negocio aplicadas.
      */
     private NotaFiscal gerarNovaNotaFiscal(Pedido pedido, BigDecimal subtotal) {
+        long inicioCalculo = System.nanoTime();
         List<Item> itensPedido = pedido.getItens();
 
         Destinatario destinatario = pedido.getDestinatario();
@@ -75,16 +96,33 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
         Regiao regiaoEntrega = encontrarRegiaoEntrega(destinatario);
         BigDecimal valorFreteAjustado = freteCalculator.calcular(BigDecimal.valueOf(pedido.getValorFrete()), regiaoEntrega);
 
+        BigDecimal totalTributos = itemNotaFiscalList.stream()
+                .map(item -> BigDecimal.valueOf(item.getValorTributoItem()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalNota = subtotal.add(valorFreteAjustado).setScale(2, RoundingMode.HALF_UP);
+
         NotaFiscal notaFiscal = NotaFiscal.builder()
                 .idNotaFiscal(UUID.randomUUID().toString())
                 .data(LocalDateTime.now())
                 .valorTotalItens(subtotal.doubleValue())
                 .valorFrete(valorFreteAjustado.doubleValue())
+                .valorTotalTributos(totalTributos.doubleValue())
+                .valorTotalNota(totalNota.doubleValue())
                 .itens(itemNotaFiscalList)
                 .destinatario(destinatario)
                 .build();
 
-        notaFiscalIntegracaoFacade.executarIntegracoes(notaFiscal);
+        registrarTempoEtapa("calculo", inicioCalculo);
+
+        MDC.put(MDC_ID_NOTA_FISCAL, notaFiscal.getIdNotaFiscal());
+        long inicioIntegracoes = System.nanoTime();
+        try {
+            notaFiscalIntegracaoFacade.executarIntegracoes(notaFiscal);
+            registrarTempoEtapa("integracoes", inicioIntegracoes);
+        } finally {
+            MDC.remove(MDC_ID_NOTA_FISCAL);
+        }
         return notaFiscal;
     }
 
@@ -147,5 +185,10 @@ public class GeradorNotaFiscalServiceImpl implements GeradorNotaFiscalService {
                 .filter(regiao -> regiao != null)
                 .findFirst()
                 .orElseThrow(() -> new BadRequestException("Endereco de entrega com regiao e obrigatorio"));
+    }
+
+    private void registrarTempoEtapa(String etapa, long inicioNanos) {
+        meterRegistry.timer("nota_fiscal.stage.duration", "etapa", etapa)
+                .record(System.nanoTime() - inicioNanos, TimeUnit.NANOSECONDS);
     }
 }
